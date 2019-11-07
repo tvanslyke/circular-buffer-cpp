@@ -4,12 +4,16 @@
 #include <utility>
 #include <memory>
 #include <algorithm>
+#include <cassert>
 
 namespace tim {
 
 inline namespace circular_buffer {
 
 namespace detail {
+
+template <class T>
+inline constexpr std::size_t bit_count = static_cast<std::size_t>(CHAR_BIT) * sizeof(T);
 
 template <class UInt>
 struct FibPair {
@@ -79,22 +83,81 @@ constexpr std::array<UInt, 2> safe_multiply(UInt lhs, UInt rhs) {
 }
 
 template <class UInt>
+constexpr std::array<UInt, 2> array_lbitshift(std::array<UInt, 2> value, std::size_t shift) {
+	constexpr std::size_t uint_bits = (CHAR_BIT * sizeof(UInt));
+	if(shift >= uint_bits) {
+		value[1] = value[0];
+		value[0] = 0u;
+		shift -= uint_bits;
+		assert(shift < uint_bits);
+	}
+	value[1] <<= shift;
+	value[1] |= value[0] >> (uint_bits - shift);
+	value[0] <<= shift;
+	return value;
+}
+
+template <class UInt>
+constexpr std::array<UInt, 2> array_rbitshift(std::array<UInt, 2> value, std::size_t shift) {
+	constexpr std::size_t uint_bits = bit_count<UInt>;
+	if(shift >= uint_bits) {
+		value[0] = value[1];
+		value[1] = 0u;
+		shift -= uint_bits;
+		assert(shift < uint_bits);
+	}
+	value[0] >>= shift;
+	value[0] |= value[1] << (uint_bits - shift);
+	value[1] >>= shift;
+	return value;
+}
+
+template <class UInt>
+constexpr std::size_t find_last_set(UInt value) {
+	constexpr std::size_t uint_bits = bit_count<UInt>;
+	if(!value)
+	{
+		return uint_bits;
+	}
+	std::size_t shift_lo = 0u;
+	std::size_t shift_hi = bit_count<UInt> - 1u;
+	while(shift_hi > shift_lo) {
+		std::size_t shift = shift_lo + (shift_hi - shift_lo) / 2;
+		UInt v = UInt(1) << shift;
+		if(v > value) {
+			shift_hi = shift;
+		} else {
+			shift_lo = shift;
+		}
+	}
+	assert(((UInt(1u) << shift_lo) & value) != 0u);
+	assert((UInt(1u) << shift_hi) > value);
+	return shift_lo;
+}
+
+template <class UInt>
 constexpr std::array<UInt, 2> safe_divmod(UInt numer, UInt denom) {
 	UInt quot = numer / denom;
 	return std::array<UInt, 2>{quot, quot * denom};
 }
+
+template <class UInt>
+constexpr std::array<UInt, 2> safe_divide(std::array<UInt, 2> numerator, UInt denominator) {
+}
  
 template <class UInt>
 constexpr std::array<UInt, 2> safe_scale_by_ratio(UInt numer, UInt denom, UInt value) {
-	auto [mul_lo, mul_hi] = safe_multiply(numer, value);
-	auto [div_hi, rem_hi] = safe_divmod(mul_hi, denom);
-	// q += div_hi
-	auto [div_lo, rem_lo] = safe_divmod(mul_lo, denom);
-	// q += div_lo
-	(void)rem_lo;
-
-	
-	
+	std::array<UInt, 2> mul = safe_multiply(numer, value);
+	if(!mul[1]) {
+		return {mul[0] / denom, 0u};
+	}
+	constexpr std::size_t uint_bits = sizeof(UInt) * CHAR_BIT;
+	std::size_t mul_shift = 0;
+	std::size_t denom_shift = 0;
+	UInt head = 0;
+	for(mul_shift = 0; mul_shift < uint_bits; ++mul_shift) {
+		UInt head = mul[1] << mul_shift;
+	}
 	
 	return std::array<UInt, 2>{quot, quot * denom};
 }
