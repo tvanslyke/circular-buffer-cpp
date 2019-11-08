@@ -142,7 +142,94 @@ constexpr std::array<UInt, 2> safe_divmod(UInt numer, UInt denom) {
 }
 
 template <class UInt>
-constexpr std::array<UInt, 2> safe_divide(std::array<UInt, 2> numerator, UInt denominator) {
+constexpr std::optional<UInt> safe_divide_helper(UInt numer_hi, half_digit numer_lo, UInt denominator) {
+	UInt quot = 0;
+	UInt rem = 0;
+
+	half_word denom_lo = denominator & ((UInt(1) << count_bits<UInt> / 2) - 1);
+	while(
+		(high_bits(quot) != 0u)
+		|| ((static_cast<UInt>(low_bits(quot)) * denom_lo) > ((rem << half_bits) | numer0_hi))
+	) {
+		--quot;
+		rem += denominator >> half_bits;
+		if(high_bits(rem) != 0u) {
+			break;
+		}
+	}
+}
+
+template <class UInt>
+constexpr std::optional<UInt> safe_divide(std::array<UInt, 2> numerator, UInt denominator) {
+	switch(denominator)
+	{
+	case 0u:
+		return std::nullopt;
+	case 2u:
+		numerator = array_rbitshift(numerator, 1);
+		[[fallthrough]]
+	case 1u:
+		if(numerator[1] != 0u) {
+			return std::nullopt;
+		} else {
+			return numerator[0];
+		}
+	default:
+		break;
+	}
+	if(numerator[1] == 0u) {
+		return numerator[0] / denominator;
+	}
+	if(numerator[1] >= denominator) {
+		return std::nullopt;
+	}
+	// std::size_t numer_shift = bit_count<UInt> - (find_last_set(numerator[1]) + 1u);
+	std::size_t denom_shift = bit_count<UInt> - (find_last_set(denominator) + 1u);
+	numerator = array_lbitshift(numerator, denom_shift);
+	denominator <<= denom_shift;
+	using half_word = UInt;
+	constexpr std::size_t half_bits = bit_count<UInt> / 2u;
+	constexpr UInt low_bits_mask = (1 << half_bits) - 1;
+	auto low_bits = [](UInt v) -> half_word {
+		return static_cast<half_word>(low_bits_mask & v);
+	};
+	auto high_bits = [](UInt v) -> half_word {
+		return static_cast<half_word>((low_bits_mask << half_bits) & v);
+	};
+	UInt quot = 0;
+	UInt rem = 0;
+
+	half_word denom_lo = low_bits(denominator);
+	half_word numer0_lo = low_bits(numerator[0]);
+	half_word numer0_hi = high_bits(numerator[0]) >> half_bits;
+
+	while(
+		(high_bits(quot) != 0u)
+		|| ((static_cast<UInt>(low_bits(quot)) * denom_lo) > ((rem << half_bits) | numer0_hi))
+	) {
+		--quot;
+		rem += denominator >> half_bits;
+		if(high_bits(rem) != 0u) {
+			break;
+		}
+	}
+	half_digit quot_hi = low_bits(quot);
+	UInt numer_tmp = ((numerator[1] << half_bits) | (numerator[0] >> half_bits)) - quot_hi * denominator;
+	quot = numer_tmp / static_cast<half_word>(denominator >> half_bits);
+	rem = numer_tmp % static_cast<half_word>(denominator >> half_bits);
+	
+	while(
+		(high_bits(quot) != 0u)
+		|| ((static_cast<UInt>(low_bits(quot)) * denom_lo) > ((rem << half_bits) | numer0_lo))
+	) {
+		--quot;
+		rem += denominator >> half_bits;
+		if(high_bits(rem) != 0u) {
+			break;
+		}
+	}
+	half_digit quot_lo = low_bits(quot);
+	
 }
  
 template <class UInt>
