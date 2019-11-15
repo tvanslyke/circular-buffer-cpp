@@ -281,211 +281,6 @@ using next_shortest_int_t = typename next_shortest_int_t<Int>::type;
 template <class T>
 inline constexpr std::size_t bit_count = static_cast<std::size_t>(CHAR_BIT) * sizeof(T);
 
-template <class UInt>
-struct FibPair {
-	UInt low;
-	UInt high;
-};
-
-template <class UInt>
-constexpr FibPair<UInt> get_largest_representable_fib_pair() {
-	UInt low = 0;
-	UInt high = 1;
-	UInt next = low + high;
-	while(next > high) {
-		low = high;
-		high = next;
-		next = low + high;
-	}
-	return FibPair<UInt>{low, high};
-}
-
-template <class UInt>
-constexpr std::pair<UInt, bool> safe_add(UInt lhs, UInt rhs) {
-	UInt result = lhs + rhs;
-	return {result, result < lhs};
-}
-
-template <class UInt>
-constexpr std::pair<UInt, bool> safe_add(UInt lhs, UInt rhs) {
-	UInt result = lhs + rhs;
-	return {result, result < lhs};
-}
-	
-template <class UInt>
-constexpr std::array<UInt, 2> safe_multiply(UInt lhs, UInt rhs) {
-	constexpr UInt shift = (CHAR_BIT * sizeof(UInt)) - 1;
-	UInt lhs_lo = lhs & ((1ull << shift) - 1);
-	UInt lhs_hi = lhs >> shift;
-	UInt rhs_lo = rhs & ((1ull << shift) - 1);
-	UInt rhs_hi = rhs >> shift;
-
-	UInt lo = lhs_lo * rhs_lo;
-	UInt hi = lhs_hi * rhs_hi;
-
-	UInt mid1 = lhs_lo * rhs_hi;
-	UInt mid2 = lhs_hi * rhs_lo;
-
-	auto [mid, mid_overflowed] = safe_add(mid1, mid2);
-	if(mid_overflowed) {
-		auto [new_hi, overflowed] = safe_add(hi, UInt(1) << shift);
-		assert(!overflowed && "Overflow shouldn't be possible here.");
-		hi = new_hi;
-	}
-	{
-		auto [new_hi, hi_overflowed] = safe_add(hi, (mid >> shift));
-		assert(!hi_overflowed && "Overflow shouldn't be possible here.");
-		hi = new_hi;
-	}
-	{
-		auto [new_lo, lo_overflowed] = safe_add(lo, (mid & ((UInt(1) << shift) - 1)));
-		if(lo_overflowed) {
-			++hi;
-			assert(hi > 0u && "Overflow shouldn't be possible here.");
-		}
-		lo = new_lo;
-	}
-	return std::array<UInt, 2>{lo, hi};
-}
-
-template <class UInt>
-constexpr std::array<UInt, 2> array_lbitshift(std::array<UInt, 2> value, std::size_t shift) {
-	constexpr std::size_t uint_bits = (CHAR_BIT * sizeof(UInt));
-	if(shift >= uint_bits) {
-		value[1] = value[0];
-		value[0] = 0u;
-		shift -= uint_bits;
-		assert(shift < uint_bits);
-	}
-	value[1] <<= shift;
-	value[1] |= value[0] >> (uint_bits - shift);
-	value[0] <<= shift;
-	return value;
-}
-
-template <class UInt>
-constexpr std::array<UInt, 2> array_rbitshift(std::array<UInt, 2> value, std::size_t shift) {
-	constexpr std::size_t uint_bits = bit_count<UInt>;
-	if(shift >= uint_bits) {
-		value[0] = value[1];
-		value[1] = 0u;
-		shift -= uint_bits;
-		assert(shift < uint_bits);
-	}
-	value[0] >>= shift;
-	value[0] |= value[1] << (uint_bits - shift);
-	value[1] >>= shift;
-	return value;
-}
-
-template <class UInt>
-constexpr std::size_t find_last_set(UInt value) {
-	constexpr std::size_t uint_bits = bit_count<UInt>;
-	if(!value)
-	{
-		return uint_bits;
-	}
-	std::size_t shift_lo = 0u;
-	std::size_t shift_hi = bit_count<UInt> - 1u;
-	while(shift_hi > shift_lo) {
-		std::size_t shift = shift_lo + (shift_hi - shift_lo) / 2;
-		UInt v = UInt(1) << shift;
-		if(v > value) {
-			shift_hi = shift;
-		} else {
-			shift_lo = shift;
-		}
-	}
-	assert(((UInt(1u) << shift_lo) & value) != 0u);
-	assert((UInt(1u) << shift_hi) > value);
-	return shift_lo;
-}
-
-template <class UInt, class HalfWord>
-constexpr UInt safe_divide_helper(UInt quot, UInt rem, HalfWord numer, UInt denom) {
-	constexpr std::size_t half_bits = bit_count<UInt> / 2u;
-	constexpr UInt low_bits_mask = (1 << half_bits) - 1;
-	constexpr auto low_bits = [](UInt v) -> half_word {
-		return static_cast<half_word>(low_bits_mask & v);
-	};
-	constexpr auto high_bits = [](UInt v) -> half_word {
-		return static_cast<half_word>((low_bits_mask << half_bits) & v);
-	};
-	UInt quot = 0;
-	UInt rem = 0;
-
-	half_word denom_lo = denom & ((UInt(1) << half_bits) - 1);
-	while(
-		(high_bits(quot) != 0u)
-		|| ((static_cast<UInt>(low_bits(quot)) * denom_lo) > ((rem << half_bits) | numer))
-	) {
-		--quot;
-		rem += denom >> half_bits;
-		if(high_bits(rem) != 0u) {
-			break;
-		}
-	}
-	return quot;
-}
-
-template <class UInt>
-constexpr std::optional<UInt> safe_divide(std::array<UInt, 2> numerator, UInt denominator) {
-	switch(denominator)
-	{
-	case 0u:
-		return std::nullopt;
-	case 2u:
-		numerator = array_rbitshift(numerator, 1);
-		[[fallthrough]]
-	case 1u:
-		if(numerator[1] != 0u) {
-			return std::nullopt;
-		} else {
-			return numerator[0];
-		}
-	default:
-		break;
-	}
-	if(numerator[1] == 0u) {
-		return numerator[0] / denominator;
-	}
-	if(numerator[1] >= denominator) {
-		return std::nullopt;
-	}
-	// std::size_t numer_shift = bit_count<UInt> - (find_last_set(numerator[1]) + 1u);
-	const std::size_t denom_shift = bit_count<UInt> - (find_last_set(denominator) + 1u);
-	numerator = array_lbitshift(numerator, denom_shift);
-	denominator <<= denom_shift;
-	using half_word = std::conditional_t<
-		std::is_integral_v<next_shortest_int_t<UInt>> && (sizeof(next_shortest_int_t<UInt>) * 2ul >= sizeof(UInt)),
-		UInt,
-		next_shortest_int_t<UInt>
-	>;
-	constexpr std::size_t half_bits = bit_count<UInt> / 2u;
-	constexpr UInt low_bits_mask = (1 << half_bits) - 1;
-	constexpr auto low_bits = [](UInt v) -> half_word {
-		return static_cast<half_word>(low_bits_mask & v);
-	};
-	constexpr  auto high_bits = [](UInt v) -> half_word {
-		return static_cast<half_word>((low_bits_mask << half_bits) & v);
-	};
-	const half_word denom_hi = denominator >> half_bits;
-	const half_word numer0_lo = low_bits(numerator[0]);
-	const half_word numer0_hi = high_bits(numerator[0]) >> half_bits;
-
-	const half_digit quot_tmp = low_bits(safe_divide_helper(numerator[1] / denom_hi, numerator[1] % denom_hi, numer0_hi, denominator));
-
-	const UInt numer_mid = ((numerator[1] << half_bits) | (numerator[0] >> half_bits)) - quot_hi * denominator;
-	const half_digit quot_lo = low_bits(safe_divide_helper(numer_mid / denom_hi, numer_mid % denom_hi, numer0_lo, denominator));
-	const half_digit quot_lo = low_bits(quot);
-	return static_cast<UInt>(quot_hi) << half_bits) | quot_lo
-}
- 
-template <class UInt>
-constexpr std::optional<UInt> safe_scale_by_ratio(UInt numer, UInt denom, UInt value) {
-	return safe_divide(safe_multiply(numer, value), denom);
-}
-
 template <class Allocator, bool = std::is_empty_v<Allocator> && !std::is_final_v<Allocator>>
 struct AllocatorBase;
 
@@ -915,9 +710,9 @@ private:
 	struct TrivialRangeGuard {
 		TrivialRangeGuard() = default;
 		TrivialRangeGuard(const TrivialRangeGuard&) = delete;
-		TrivialRangeGuard(TrivialRangeGuard&&) = delete;
+		TrivialRangeGuard(TrivialRangeGuard&&) = default;
 		TrivialRangeGuard& operator=(const TrivialRangeGuard&) = delete;
-		TrivialRangeGuard& operator=(TrivialRangeGuard&&) = delete;
+		TrivialRangeGuard& operator=(TrivialRangeGuard&&) = default;
 
 		Allocator* alloc = nullptr;
 		pointer start = nullptr;
@@ -927,16 +722,28 @@ private:
 	struct NonTrivialRangeGuard {
 		NonTrivialRangeGuard() = default;
 		NonTrivialRangeGuard(const NonTrivialRangeGuard&) = delete;
-		NonTrivialRangeGuard(NonTrivialRangeGuard&&) = delete;
+		NonTrivialRangeGuard(NonTrivialRangeGuard&& other) noexcept:
+			alloc(std::exchange(other.alloc, nullptr)),
+			start(other.start),
+			stop(other.stop)
+		{
+
+		}
+
 		NonTrivialRangeGuard& operator=(const NonTrivialRangeGuard&) = delete;
-		NonTrivialRangeGuard& operator=(NonTrivialRangeGuard&&) = delete;
+		NonTrivialRangeGuard& operator=(NonTrivialRangeGuard&& other) noexcept {
+			NonTrivialRangeGuard tmp(std::move(*this));
+			alloc = std::exchange(other.alloc, nullptr);
+			start = other.start;
+			stop = other.stop;
+		}
 
 		~NonTrivialRangeGuard() {
 			if(!alloc) {
 				return;
 			}
 			for(pointer p = start; p < stop; ++p) {
-				alloc_traits::destroy(*alloc, p);
+				alloc_traits::destroy(*alloc, std::addressof(*p));
 			}
 		}
 
@@ -1024,7 +831,7 @@ private:
 		constexpr SplitRanges(SplitRange<Ptr> r):
 			ranges_{r, SplitRange<Ptr>{nullptr, 0u, true}}
 		{
-			
+			ranges_[1].set_tag(true);
 		}
 
 		constexpr SplitRanges(SplitRange<Ptr> r1, SplitRange<Ptr> r2):
@@ -1072,6 +879,29 @@ private:
 
 		constexpr size_type total() const {
 			return ranges_[0].size() + (ranges_[1].get_tag() ? ranges_[1].size() : 0ul);
+		}
+
+		constexpr SplitRanges first(size_type count) const {
+			if(ranges_[0].size() >= count) {
+				return SplitRanges(SplitRange<Ptr>(this->begin()->begin(), count, false));
+			}
+			return SplitRanges(
+				ranges_[0],
+				SplitRange<Ptr>(ranges_[1]->begin(), count - ranges_[0].size(), false)
+			);
+		}
+
+		constexpr SplitRanges last(size_type count) const {
+			if(ranges_.size() == 1u) {
+				return SplitRanges(SplitRange<Ptr>(this->begin()->end() - count, count, false));
+			}
+			if(ranges_[1].size() >= count) {
+				return SplitRanges(SplitRange<Ptr>(this->begin()[1].end() - count, count, false));
+			}
+			return SplitRanges(
+				SplitRange<Ptr>(ranges_[0]->end() - (count - ranges_[1].size()), count - ranges_[1].size(), false)
+				ranges_[1]
+			);
 		}
 
 	private:
@@ -1324,7 +1154,7 @@ public:
 			return;
 		}
 		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(next_size<true>(this->capacity()));
+		tmp.reserve_fast(grow_size(this->capacity()));
 		tmp.start_ = this->start_;
 		auto pos = tmp.begin() + this->size();
 		this->construct(pos.get_raw_pointer(), std::forward<Args>(args)...);
@@ -1349,7 +1179,7 @@ public:
 			return;
 		}
 		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(next_size<true>(this->capacity()));
+		tmp.reserve_fast(grow_size(this->capacity()));
 		tmp.start_ = this->start_;
 		auto pos = tmp.begin() - 1;
 		this->construct(pos.get_raw_pointer(), std::forward<Args>(args)...);
@@ -1414,7 +1244,7 @@ public:
 		// Once we've successfully copied everything else into 'tmp', we'll transfer over
 		// all of the stuff still contained in '*this'.
 		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(next_size(this->capacity()));
+		tmp.reserve_fast(grow_size(this->capacity()));
 		tmp.start_ = compute_offset(this->start_, this->size(), tmp.capacity());
 		for(;;) {
 			// Need to leave room for the stuff currently contained in '*this'.
@@ -1426,7 +1256,7 @@ public:
 				assert(first == last);
 				break;
 			}
-			tmp.reserve_back(next_size(this->capacity()));
+			tmp.reserve_back(grow_size(this->capacity()));
 		}
 		for(auto range: detail::reversed(this->get_ranges())) {
 			tmp.prepend_fast(
@@ -1500,7 +1330,7 @@ public:
 		// Once we've successfully copied everything else into 'tmp', we'll transfer over
 		// all of the stuff still contained in '*this'.
 		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(next_size(this->capacity()));
+		tmp.reserve_fast(grow_size(this->capacity()));
 		tmp.start_ = this->start_;
 		for(;;) {
 			// Need to leave room for the stuff currently contained in '*this'.
@@ -1512,7 +1342,7 @@ public:
 				assert(first == last);
 				break;
 			}
-			tmp.reserve_front(next_size(this->capacity()));
+			tmp.reserve_front(grow_size(this->capacity()));
 		}
 		std::reverse(tmp.begin(), tmp.end());
 		tmp.prepend_fast(
@@ -1569,10 +1399,14 @@ public:
 	}
 
 
+	constexpr void shift_right(size_type count) {
+		shift_left(capacity() - count);
+	}
+
 	/** 
 	 * Modifies the underlying storage such that the new starting index
 	 */
-	constexpr void shift_left(size_type count) const {
+	constexpr void shift_left(size_type count) {
 		if(count >= capacity()) {
 			count %= capacity();
 		}
@@ -1584,41 +1418,220 @@ public:
 			start_ = (begin() - count).get_index();
 			return;
 		}
-		size_type spare = (capacity() - size());
-		if(count <= spare) {
-			auto start = this->begin();
-			this->prepend_fast(
-				try_make_move_iterator(start),
-				try_make_move_iterator(start + count),
-				count
-			);
-			auto stop = std::copy(
-				this->try_make_move_iterator(start + count),
-				this->try_make_move_iterator(this->end()),
-				start
-			);
-			this->pop_back_n(this->end() - stop);
-		} else if(count >= size()) {
-			size_type overlap = count - spare;
-			auto start = this->begin();
-			// fill
-			this->prepend_fast(
-				try_make_move_iterator(start) + overlap,
-				try_make_move_iterator(start + spare) + overlap,
-				spare
-			);
-			auto stop = std::copy(
-				try_make_move_iterator(start + spare) + overlap,
-				try_make_move_iterator(this->end()),
-				start + overlap
-			);
-			this->pop_back_n(this->end() - stop);
-			std::copy(
-				(this->end() - overlap) - count
+		size_type used = size();
+		size_type spare = (capacity() - used);
+		bool has_front_overlap = count < used;
+		bool has_back_overlap = count > spare;
+		if(has_front_overlap) {
+			if(has_back_overlap) {
+				shift_left_both_overlap(count);
+			} else {
+				shift_left_front_overlap(count);
+			}
+		} else {
+			if(has_back_overlap) {
+				shift_left_back_overlap(count);
+			} else {
+				shift_left_no_overlap(count);
+			}
 		}
 	}
 
 private:
+	constexpr void shift_left_front_overlap(size_type count) {
+		size_type initial_size = size();
+		for(auto range: detail::reversed(get_ranges().first(count))) {
+			this->prepend(range);
+		}
+		try_move_ranges(
+			get_ranges().last(initial_size - count),
+			get_ranges().first(initial_size - count)
+		);
+		this->pop_back_n(count);
+	}
+
+	constexpr void shift_left_back_overlap(size_type count) {
+		// Treat as a right shift.
+		count = capacity() - count;
+		size_type initial_size = size();
+		for(auto range: get_ranges().last(count)) {
+			this->append(range);
+		}
+		try_move_ranges(
+			get_ranges().first(initial_size - count),
+			get_ranges().last(initial_size - count)
+		);
+		this->pop_front_n(count);
+	}
+
+	constexpr void shift_left_both_overlap(size_type count) {
+		size_type right_shift = capacity() - count;
+		size_type gap_size = capacity() - size();
+		auto new_range_start = this->end() - right_shift;
+		auto new_range_stop = new_range_start + gap_size;
+		auto new_ranges = as_split_ranges(new_range_start, new_range_stop);
+		auto spare = get_spare_ranges();
+		auto gaurds = try_move_construct_ranges(new_ranges, spare);
+		size_type front_rem = new_range_start - this->begin();
+		try_move_ranges_backward(
+			as_split_ranges(
+				new_range_start - front_rem,
+				new_range_start
+			),
+			as_split_ranges(
+				new_range_stop - front_rem,
+				new_range_stop
+			)
+		);
+		size_type right_overlap = right_shift - gap_size;
+		try_move_ranges(
+			as_split_ranges(
+				this->end() - right_overlap,
+				this->end()
+			),
+			as_split_ranges(
+				this->begin(),
+				this->begin() + right_overlap
+			)
+		);
+		if(guards.second) {
+			guards.second->alloc = nullptr;
+		}
+		guards.first.alloc = nullptr;
+		if(this->start_ >= count) {
+			this->start_ -= count;
+		}
+		for(auto range: as_split_ranges(this->end(), this->end() + (capacity() - size()))) {
+			for(auto& elem: range) {
+				this->destory(std::addressof(elem));
+			}
+		}
+	}
+
+	constexpr void shift_left_no_overlap(size_type count) {
+		// Treat as a right shift.
+		count = capacity() - count;
+		auto new_begin = this->begin() + count;
+		new_begin.set_has_wrapped(false);
+		auto new_end = new_begin() + this->size();
+		auto guards = try_move_construct_ranges(
+			as_split_ranges(begin(), end()),
+			as_split_ranges(new_begin, new_end)
+		);
+		this->clear_fast();
+		this->start_ = new_begin.tagged_index_;
+	}
+
+	template <class Src, class Dest>
+	constexpr void try_move_ranges(Src src, Dest dest) {
+		assert(dest.total() == src.total());
+		if(dest.size() == 1) {
+			auto dest_pos = dest.begin()->begin();
+			auto dest_stop = dest.begin()->end();
+			for(auto range: src) {
+				assert(dest_stop - dest_pos >= range.size());
+				dest_pos = std::copy(
+					try_make_move_iterator(range.begin()),
+					try_make_move_iterator(range.end()),
+					dest_pos
+				);
+			}
+			assert(dest_pos == dest_stop);
+		} else {
+			assert(src.size() == 1u);
+			auto src_pos = src.begin()->begin();
+			auto src_stop = src.begin()->end();
+			for(auto range: dest) {
+				assert(src_stop - src_pos >= range.size());
+				std::copy(
+					try_make_move_iterator(src_pos),
+					try_make_move_iterator(src_pos + range.size()),
+					range.begin()
+				);
+				src_pos += range.size();
+			}
+			assert(src_pos == src_stop);
+		}
+	}
+
+	template <class Src, class Dest>
+	constexpr void try_move_ranges_backward(Src src, Dest dest) {
+		assert(dest.total() == src.total());
+		if(dest.size() == 1) {
+			auto dest_pos = dest.begin()->begin();
+			auto dest_stop = dest.begin()->end();
+			for(auto range: detail::reversed(src)) {
+				assert(dest_stop - dest_pos >= range.size());
+				dest_stop = std::copy_backward(
+					try_make_move_iterator(range.begin()),
+					try_make_move_iterator(range.end()),
+					dest_stop	
+				);
+			}
+			assert(dest_pos == dest_stop);
+		} else {
+			assert(src.size() == 1u);
+			auto src_start = src.begin()->begin();
+			auto src_stop = src.begin()->end();
+			for(auto range: detail::reversed(dest)) {
+				assert(src_stop - src_pos >= range.size());
+				std::copy_backward(
+					try_make_move_iterator(src_stop - range.size()),
+					try_make_move_iterator(src_stop),
+					range.end()
+				);
+				src_stop -= range.size();
+			}
+			assert(src_pos == src_stop);
+		}
+	}
+
+
+	template <class Src, class Dest>
+	constexpr auto try_move_construct_ranges(Src src, Dest dest)
+		-> std::pair<RangeGuard, std::optional<RangeGuard>> 
+	{
+		assert(dest.total() == src.total());
+		if(dest.size() == 1) {
+			RangeGuard guard_{std::addressof(this->alloc()), dest.begin()->begin(), dest.begin()->begin()};
+			for(auto range: src) {
+				auto stop = try_make_move_iterator(range.end());
+				for(auto pos = try_make_move_iterator(range.begin()); pos < stop; (void)++pos, ++guard_.stop) {
+					assert(guard_.stop < dest.begin()->end());
+					this->construct(guard_.stop, *pos);
+				}
+			}
+			assert(guard_.stop == dest.begin()->end());
+			gaurd_.alloc = nullptr;
+		} else {
+			RangeGuard guard1_{std::addressof(this->alloc()), dest.begin()->begin(), dest.begin()->begin()};
+			assert(src.size() == 1u);
+			auto range = *src.begin();
+			auto pos = try_make_move_iterator(range.begin());
+			auto src_stop = try_make_move_iterator(range.end());
+			for(; guard1_.stop < dest.begin()->end(); (void)++pos, ++guard1_.stop) {
+				assert(pos < src_stop);
+				this->construct(guard1_.stop, *pos);
+			}
+			RangeGuard guard2_{std::addressof(this->alloc()), dest.begin()[1].begin(), dest.begin()[1].begin()};
+			for(; guard2_.stop < dest.begin()[1].end(); (void)++pos, ++guard2_.stop) {
+				assert(pos < src_stop);
+				this->construct(guard2_.stop, *pos);
+			}
+			assert(pos == src_stop);
+			gaurd2_.alloc = nullptr;
+			gaurd1_.alloc = nullptr;
+		}
+	}
+
+	constexpr void clear_fast() {
+		for(auto range: get_ranges()) {
+			for(auto& elem: range) {
+				this->destroy(std::addressof(elem));
+			}
+		}
+	}
+
 	constexpr CircularBuffer<T, AllocatorRef<Allocator>> make_temporary_buffer() const noexcept {
 		return CircularBuffer<T, AllocatorRef<Allocator>>(AllocatorRef<Allocator>(this->alloc()));
 	}
@@ -1730,60 +1743,92 @@ private:
 		++size_;
 	}
 
-	template <bool Grow>
-	static constexpr size_type next_size(size_type n) {
-		// Safely multiply by the golden ratio without floating point.
+	static constexpr std::optional<size_type> grow_size(size_type n) {
 		using wide_int_type = next_widest_int_t<size_type>;
-		constexpr auto fib_pair = detail::get_largest_representable_fib_pair<size_type>();
-		constexpr uint_type numer = Grow ? fib_pair.high : fib_pair.low;
-		constexpr uint_type denom = Grow ? fib_pair.low : fib_pair.high;
-
-		if constexpr(sizeof(wide_int_type) >= 2ull * sizeof(size_type)) {
-			wide_int_type product = static_cast<wide_int_type>(n) * numer;
-			wide_int_type quot = static_cast<wide_int_type>(n) / denom;
-			assert(quot == static_cast<size_type>(quot) && "Overflow occurred.");
-			return static_cast<size_type>(quot);
-		} else {
-#if defined(TIM_CICULAR_BUFFER_NO_USE_INTRINSICS)
-			std::optional<size_type> result = detail::safe_scale_by_ratio(numer, denom, n);
-			assert(result && "Overflow occurred.");
-			return *result;
-#elif defined(__GNUC__) && defined(__SIZEOF_INT128__)
-			if constexpr(sizeof(unsigned __int128) >= 2ull * sizeof(size_type)) {
-				unsigned __int128 product = static_cast<unsigned __int128>(n) * numer;
-				unsigned __int128 quot = static_cast<unsigned __int128>(n) / denom;
-				assert(quot == static_cast<size_type>(quot) && "Overflow occurred.");
-				return static_cast<size_type>(quot);
-			} else {
-				std::optional<size_type> result = detail::safe_scale_by_ratio(numer, denom, n);
-				assert(result && "Overflow occurred.");
-				return *result;
-			}
-#elif defined(_MSC_VER)
-# if _MSC_VER >= 1920
-			if constexpr(sizeof(unsigned __int64) >= sizeof(size_type)) {
-				unsigned __int64 product_hi = 0u;
-				unsigned __int64 product_lo = _mul128(
-					static_cast<unsigned __int64>(n),
-					static_cast<unsigned __int64>(numer),
-					&product_hi
-				);
-				assert(product_hi < denom && "Overflow occurred.");
-				[[maybe_unused]]
-				unsigned __int64 rem = 0u;
-				unsigned __int128 quot = _udiv128(product_hi, product_lo, denom, &rem);
-				assert(quot == static_cast<size_type>(quot) && "Overflow occurred.");
-				return static_cast<size_type>(quot);
-			} else {
-# endif
-				std::optional<size_type> result = detail::safe_scale_by_ratio(numer, denom, n);
-				assert(result && "Overflow occurred.");
-				return *result;
-# if _MSC_VER >= 1920
-			}
-# endif
-#endif
+		if(n == 0) {
+			return 1u;
 		}
+		if(n == 1) {
+			return 2u;
+		}
+		if((std::numeric_limits<size_type>::max() / 16ul) >= n) {
+			// Approximate the golden ratio if it won't overflow.
+			n *= 16ul;
+			n /= 10ul;
+			return n;
+		} 
+		if constexpr(sizeof(next_widest_int_t<size_type>) > sizeof(size_type)) {
+			// Use a wider integer type if possible.
+			next_widest_int_t<size_type> widened = n;
+			widened *= 16ul;
+			widened /= 10ul;
+			size_type next_size = static_cast<size_type>(widened);
+			if(next_size <= n) {
+				return std::nullopt;
+			}
+			return next_size;
+		} else {
+			// Use floating point as a last resort.
+			constexpr double golden_ratio = 1.6180339887498948482045868343656381177203091798057628621354486;
+			double grown = golden_ratio * n;
+			if(grown > std::numeric_limits<size_type>::max()) {
+				return std::nullopt;
+			}
+			return static_cast<size_type>(grown);
+		}
+	}
+
+	static constexpr std::optional<size_type> shrink_size(size_type n) {
+		using wide_int_type = next_widest_int_t<size_type>;
+		if(n == 0) {
+			return std::nullopt;
+		}
+		if(n == 1) {
+			return 0u;
+		}
+		if((std::numeric_limits<size_type>::max() / 10ul) >= n) {
+			// Approximate the golden ratio if it won't overflow.
+			n *= 10ul;
+			n /= 16ul;
+			return n;
+		} 
+		if constexpr(sizeof(next_widest_int_t<size_type>) > sizeof(size_type)) {
+			// Use a wider integer type if possible.
+			next_widest_int_t<size_type> widened = n;
+			widened *= 10ul;
+			widened /= 16ul;
+			return static_cast<size_type>(widened);
+		} else {
+			// Use floating point as a last resort.
+			constexpr double golden_ratio = 1.6180339887498948482045868343656381177203091798057628621354486;
+			return static_cast<size_type>(n / golden_ratio);
+		}
+	}
+
+	static constexpr SplitRanges<const_pointer> as_split_ranges(const_iterator first, const_iterator last) {
+		assert(first <= last);
+		if(first.get_has_wrapped() || !last.get_has_wrapped() || last.get_index() == 0) {
+			return SplitRanges<const_pointer>(
+				SplitRange<const_pointer>{first.get_pointer(), last.tagged_index_ - first.tagged_index_}
+			);
+		}
+		return SplitRanges<const_pointer>(
+			SplitRange<const_pointer>{first.get_pointer(), first.cap_ - (first.get_pointer() - data_)},
+			SplitRange<const_pointer>{last.data_, last.start_}
+		);
+	}
+
+	static constexpr SplitRanges<pointer> as_split_ranges(iterator first, iterator last) {
+		assert(first <= last);
+		if(first.get_has_wrapped() || !last.get_has_wrapped() || last.get_index() == 0) {
+			return SplitRanges<pointer>(
+				SplitRange<pointer>{first.get_pointer(), last.tagged_index_ - first.tagged_index_}
+			);
+		}
+		return SplitRanges<pointer>(
+			SplitRange<pointer>{first.get_pointer(), first.cap_ - (first.get_pointer() - data_)},
+			SplitRange<pointer>{last.data_, last.start_}
+		);
 	}
 
 	constexpr SplitRanges<const_pointer> get_spare_ranges() const {
