@@ -86,6 +86,119 @@ constexpr SimpleRange<typename C::reverse_iterator> reversed(C& container) {
 	return SimpleRange<typename C::reverse_iterator>(rbegin(container), rend(container));
 }
 
+namespace traits {
+
+template <class C>
+struct iterator_type {
+	template <class T>
+	struct trait { using type = T; };
+
+	using std::begin;
+
+	template <class Range, class Iter = std::decay_t<decltype(begin(std::declval<Range&>()))>>
+	static constexpr auto helper(int) -> trait<Iter> {
+
+	};
+
+	template <class Range>
+	static constexpr auto helper(...) -> trait<void> {
+
+	};
+	using type = typename decltype(helper<Range>(0))::type;
+};
+
+} /* namespace traits */
+
+template <
+	class It,
+	class Dest,
+	std::enable_if_t<
+		!std::is_same_v<
+			std::random_access_iterator_tag,
+			typename std::iterator_traits<
+				typename traits::iterator_type<
+					typename std::iterator_traits<It>::value_type
+				>::type
+			>::iterator_category
+		>
+		|| !std::is_same_v<
+			std::random_access_iterator_tag,
+			typename std::iterator_traits<
+				typename traits::iterator_type<
+					typename std::iterator_traits<Dest>::value_type
+				>::type
+			>::iterator_category
+		>,
+		bool
+	> = false
+>
+constexpr auto copy_ranges(It first, It last, Dest dest)
+	-> std::pair<Dest, typename traits::iterator_type<Dest>::type>
+{
+	using std::begin;
+	using std::end;
+	auto dest_pos = dest->begin();
+	auto dest_stop = dest->end();
+	for(auto pos = first; pos != last; ++pos) {
+		auto src_pos = pos->begin();
+		auto src_stop = pos->end();
+		while(src_pos != src_stop) {
+			if(dest_pos == dest_stop) {
+				++dest;
+				dest_pos = dest->begin();
+				dest_stop = dest->end();
+			}
+			
+		}
+	}
+	return dest_pos;
+}
+
+template <
+	class It,
+	class Dest,
+	std::enable_if_t<
+		std::is_same_v<
+			std::random_access_iterator_tag,
+			typename std::iterator_traits<
+				typename traits::iterator_type<
+					typename std::iterator_traits<It>::value_type
+				>::type
+			>::iterator_category
+		>
+		&& std::is_same_v<
+			std::random_access_iterator_tag,
+			typename std::iterator_traits<
+				typename traits::iterator_type<
+					typename std::iterator_traits<Dest>::value_type
+				>::type
+			>::iterator_category
+		>,
+		bool
+	> = false
+>
+constexpr auto copy_ranges(It first, It last, Dest dest)
+	-> std::pair<Dest, typename traits::iterator_type<Dest>::type>
+{
+	using std::begin;
+	using std::end;
+	auto dest_pos = dest->begin();
+	auto dest_stop = dest->end();
+	for(auto pos = first; pos != last; ++pos) {
+		auto src_pos = pos->begin();
+		auto src_stop = pos->end();
+		while(src_pos != src_stop) {
+			if(dest_pos == dest_stop) {
+				++dest;
+				dest_pos = dest->begin();
+				dest_stop = dest->end();
+			}
+			
+		}
+	}
+	return dest_pos;
+}
+
 template <class T, class ... U>
 struct is_one_of: std::bool_constant<(std::is_same_v<T, U> || ...)> {}
 
@@ -928,6 +1041,59 @@ private:
 		size_type count;
 	};
 
+	struct DummyGuard {
+		bool active = true;
+	};
+
+	auto make_manual_append_guard() {
+		return make_manual_scope_guard([this, initial_size=this->size()]() {
+			size_type sz = this->size();
+			if(sz > initial_size) {
+				this->pop_back_n(sz - initial_size);
+			}
+		});
+	}
+
+	auto make_manual_prepend_guard() {
+		return make_manual_scope_guard([this, initial_size=this->size()]() {
+			size_type sz = this->size();
+			if(sz > initial_size) {
+				this->pop_front_n(sz - initial_size);
+			}
+		});
+	}
+
+	constexpr auto make_manual_append_guard_if_not_nothrow_move() {
+		if constexpr(
+			std::is_nothrow_move_constructible_v<T>
+			&& std::is_nothrow_move_assignable_v<T>
+		) {
+			return DummyGuard{};
+		} else {
+			return make_manual_append_guard();
+		}
+	}
+
+	constexpr auto make_manual_prepend_guard_if_not_nothrow_move() {
+		if constexpr(
+			std::is_nothrow_move_constructible_v<T>
+			&& std::is_nothrow_move_assignable_v<T>
+		) {
+			return DummyGuard{};
+		} else {
+			return make_manual_prepend_guard();
+		}
+	}
+
+	template <bool Cond, class Fn>
+	static constexpr auto make_manual_scope_guard_if(Fn&& fn) {
+		if constexpr(Cond) {
+			return detail::make_manual_scope_guard(std::forward<Fn>(fn));
+		} else {
+			return DummyGuard{};
+		}
+	}
+
 	using safe_pointer = std::unique_ptr<T, CircularBufferDeleter>;
 
 	safe_pointer allocate_safe(size_type count) {
@@ -1114,6 +1280,48 @@ public:
 			return;
 		}
 		this->reserve_slow(new_cap, this->start_);
+	}
+
+	template <
+		class It,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				typename std::iterator_traits<It>::iterator_category, 
+				std::forward_iterator_tag,
+				std::bidirectional_iterator_tag,
+				std::random_access_iterator_tag
+			>
+		>
+	>
+	constexpr void insert(const_iterator pos, It first, It last) {
+		size_type count = std::distance(first, last);
+		size_type index = pos - cbegin();
+		if(count <= this->capacity() - this->size()) {
+			this->insert_fast(pos, first, last, count);
+		} else {
+			this->insert_slow(pos, first, last, count);
+		}
+	}
+
+	template <
+		class It,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				typename std::iterator_traits<It>::iterator_category, 
+				std::forward_iterator_tag,
+				std::bidirectional_iterator_tag,
+				std::random_access_iterator_tag
+			>
+		>
+	>
+	constexpr void insert_front(const_iterator pos, It first, It last) {
+		size_type count = std::distance(first, last);
+		size_type index = pos - cbegin();
+		if(count <= this->capacity() - this->size()) {
+			this->insert_front_fast(pos, first, last, count);
+		} else {
+			this->insert_front_slow(pos, first, last, count);
+		}
 	}
 
 	/**
@@ -1346,8 +1554,8 @@ public:
 		}
 		std::reverse(tmp.begin(), tmp.end());
 		tmp.prepend_fast(
-			std::make_move_iterator(this->rend() + count_inserted),
-			std::make_move_iterator(this->rend()),
+			try_make_move_iterator(this->rend() + count_inserted),
+			try_make_move_iterator(this->rend()),
 			count_inserted
 		);
 		size_type skip_count = count_inserted;
@@ -1398,19 +1606,72 @@ public:
 		this->commit(tmp);
 	}
 
-
+	/** 
+	 * @brief
+	 * Modifies the underlying storage such that the starting index of
+	 * the buffer is shifted right by 'count', without changing the order
+	 * of the elements in the buffer.
+	 *
+	 * Example:
+	 *     Underlying storage before shifting:
+	 *         [-, a, b, c, d, -, -, -, -]
+	 *             ^ begin_index() == 1
+	 *     Underlying storage after shifting right by 2:
+	 *         [-, -, -, a, b, c, d, -, -]
+	 *                   ^ begin_index() == 3
+	 *
+	 * @param count The number of elements to shift the buffer right by.
+	 * @note If T is MoveInsertible and std::is_nothrow_move_constructible_v<T> is true,
+	 * and std::is_nothrow_move_assignable_v<T> is true, this function throws only those
+	 * exceptions thrown when move-constructing objects of type T using
+	 * std::allocator_traits<Allocator>::construct().
+	 * Otherwise if T is MoveInsertible and CopyInsertible but has a throwing move
+	 * constructor or move assignment operator, elements are shifted using copy
+	 * construction and copy assignment.
+	 * In both of the above two cases, the strong exception guarantee is maintained.
+	 * Otherwise, if T is not CopyInsertible, the strong exception gaurantee is waived;
+	 * elements are shifted using move construction and move assignment, but if an
+	 * exception is thrown, the buffer will be left in a valid but unspecified state.
+	 * @note This function does not allocate, all data movement is done in-place.
+	 * @note This function makes O(this->size()) calls to T's move/copy constructor and 
+	 * assignment operator.
+	 */
 	constexpr void shift_right(size_type count) {
 		shift_left(capacity() - count);
 	}
 
 	/** 
-	 * Modifies the underlying storage such that the new starting index
+	 * @brief
+	 * Modifies the underlying storage such that the starting index of
+	 * the buffer is shifted left by 'count', without changing the order
+	 * of the elements in the buffer. 
+	 *
+	 * Example:
+	 *     Underlying storage before shifting:
+	 *         [-, -, -, a, b, c, d, -, -]
+	 *                   ^ begin_index() == 3
+	 *     Underlying storage after shifting left by 2:
+	 *         [-, a, b, c, d, -, -, -, -]
+	 *             ^ begin_index() == 1
+	 *
+	 * @param count The number of elements to shift the buffer left by.
+	 * @note If T is MoveInsertible and std::is_nothrow_move_constructible_v<T> is true,
+	 * and std::is_nothrow_move_assignable_v<T> is true, this function throws only those
+	 * exceptions thrown when move-constructing objects of type T using
+	 * std::allocator_traits<Allocator>::construct().
+	 * Otherwise if T is MoveInsertible and CopyInsertible but has a throwing move
+	 * constructor or move assignment operator, elements are shifted using copy
+	 * construction and copy assignment.
+	 * In both of the above two cases, the strong exception guarantee is maintained.
+	 * Otherwise, if T is not CopyInsertible, the strong exception gaurantee is waived;
+	 * elements are shifted using move construction and move assignment, but if an
+	 * exception is thrown, the buffer will be left in a valid but unspecified state.
+	 * @note This function does not allocate, all data movement is done in-place.
+	 * @note This function makes O(this->size()) calls to T's move/copy constructor and 
+	 * assignment operator.
 	 */
 	constexpr void shift_left(size_type count) {
-		if(count >= capacity()) {
-			count %= capacity();
-		}
-		if(count == 0u) {
+		if(count == capacity() || count == 0u) {
 			return;
 		}
 		if(size() == capacity()) {
@@ -1438,15 +1699,131 @@ public:
 	}
 
 private:
+
+	template <class It>
+	constexpr void insert_slow(const_iterator pos, It first, It last, size_type count) {
+		auto tmp = make_temporary_buffer();
+		tmp.reserve(size() + count);
+		tmp.start_ = pos.get_index();
+		tmp.append_fast(first, last, count);
+		for(auto range: as_split_ranges(as_mutable_iterator(pos), this->end())) {
+			tmp.append_fast(
+				try_make_move_iterator(range.begin()),
+				try_make_move_iterator(range.end())
+			); 
+		}
+		for(auto range: detail::reversed(as_split_ranges(this->begin(), as_mutable_iterator(pos)))) {
+			tmp.prepend_fast(
+				try_make_move_iterator(range.begin()),
+				try_make_move_iterator(range.end())
+			);
+		}
+		this->commit(tmp);
+	}
+
+	template <class It>
+	constexpr void insert_fast(const_iterator pos, It first, It last, size_type count) {
+		assert(count <= size());
+		size_type dest_index = pos - begin();
+		if(dest_index == size()) {
+			append_fast(first, last, count);
+			return;
+		}
+		size_type end_index = index + count;
+		assert(end_index <= capacity());
+		if(end_index <= size()) {
+			auto ranges_to_move = as_split_ranges(as_mutable_iterator(pos), this->end());
+			size_type tail_count = size() - end_index;
+			auto tail_ranges = get_ranges().last(tail_count);
+			for(auto range: ranges_to_move.last(count)) {
+				first = append_and_replace_fast(
+					first,
+					last,
+					std::make_move_iterator(range.begin()),
+					std::make_move_iterator(range.end())
+				);
+			}
+			try_move_ranges_backward(ranges_to_move.first(tail_count), tail_ranges);
+			auto dest_ranges = this->get_ranges().last(count);
+			for(auto range: ranges_to_move.first(count)) {
+				first = append_and_replace_fast(
+					first,
+					last,
+					std::make_move_iterator(range.begin()),
+					std::make_move_iterator(range.end())
+				);
+			}
+			assert(first == last);
+		} else {
+			size_type overlap = end_index - size();
+			It overlap_start = std::next(first, count - overlap);
+			this->append_fast(overlap_start, last, overlap);
+			auto dest_ranges = this->get_ranges().last(count - overlap)
+			for(auto range: dest_ranges) {
+				first = append_and_replace_fast(
+					first,
+					overlap_start,
+					try_make_move_iterator(range.begin()),
+					try_make_move_iterator(range.end())
+				);
+			}
+			assert(first == overlap_start);
+		}
+	}
+
+	template <class It>
+	constexpr void insert_front_fast(const_iterator pos, It first, It last, size_type count) {
+		assert(count <= size());
+		size_type dest_index = pos - begin();
+		if(dest_index == 0) {
+			prepend_fast(first, last, count);
+			return;
+		}
+		size_type end_index = index + count;
+		assert(end_index <= capacity());
+		if(start_index >= size()) {
+			auto dest_ranges = this->get_ranges().last(count);
+			for(auto range: this->get_ranges().last(count)) {
+				first = append_and_replace_fast(
+					first,
+					last,
+					try_make_move_iterator(range.begin()),
+					try_make_move_iterator(range.end())
+				);
+			}
+			assert(first == last);
+		} else {
+			size_type overlap = end_index - size();
+			It overlap_start = std::next(first, count - overlap);
+			this->append_fast(overlap_start, last, overlap);
+			auto dest_ranges = this->get_ranges().last(count - overlap)
+			for(auto range: dest_ranges) {
+				first = append_and_replace_fast(
+					first,
+					overlap_start,
+					try_make_move_iterator(range.begin()),
+					try_make_move_iterator(range.end())
+				);
+			}
+			assert(first == overlap_start);
+		}
+	}
 	constexpr void shift_left_front_overlap(size_type count) {
 		size_type initial_size = size();
-		for(auto range: detail::reversed(get_ranges().first(count))) {
-			this->prepend(range);
+		{
+			auto guard = make_manual_prepend_guard_if_not_nothrow_move();
+			for(auto range: detail::reversed(get_ranges().first(count))) {
+				this->prepend_fast(range);
+			}
+			if constexpr(std::is_nothrow_move_assignable_v<T>) {
+				guard.active = false;
+			}
+			try_move_ranges(
+				get_ranges().last(initial_size - count),
+				get_ranges().first(initial_size - count)
+			);
+			guard.active = false;
 		}
-		try_move_ranges(
-			get_ranges().last(initial_size - count),
-			get_ranges().first(initial_size - count)
-		);
 		this->pop_back_n(count);
 	}
 
@@ -1454,58 +1831,55 @@ private:
 		// Treat as a right shift.
 		count = capacity() - count;
 		size_type initial_size = size();
-		for(auto range: get_ranges().last(count)) {
-			this->append(range);
+		{
+			auto guard = make_manual_append_guard_if_not_nothrow_move();
+			for(auto range: get_ranges().last(count)) {
+				this->append_fast(range);
+			}
+			if constexpr(std::is_nothrow_move_assignable_v<T>) {
+				guard.active = false;
+			}
+			try_move_ranges(
+				get_ranges().first(initial_size - count),
+				get_ranges().last(initial_size - count)
+			);
+			guard.active = false;
 		}
-		try_move_ranges(
-			get_ranges().first(initial_size - count),
-			get_ranges().last(initial_size - count)
-		);
 		this->pop_front_n(count);
 	}
 
 	constexpr void shift_left_both_overlap(size_type count) {
-		size_type right_shift = capacity() - count;
-		size_type gap_size = capacity() - size();
-		auto new_range_start = this->end() - right_shift;
-		auto new_range_stop = new_range_start + gap_size;
-		auto new_ranges = as_split_ranges(new_range_start, new_range_stop);
-		auto spare = get_spare_ranges();
-		auto gaurds = try_move_construct_ranges(new_ranges, spare);
-		size_type front_rem = new_range_start - this->begin();
+		// Treat as a right shift.
+		count = capacity() - count;
+		size_type initial_size = size();
+		// Fill the spare ranges.
+		auto initial_end = this->end();
+		auto start = initial_end - count;
+		auto stop = start + (capacity() - initial_size);
+		auto guard = make_manual_append_guard_if_not_nothrow_move();
+		for(auto range: as_split_ranges(start, stop)) {
+			this->append_fast(
+				try_make_move_iterator(range.begin()),
+				try_make_move_iterator(range.end())
+			);
+		}
+		if constexpr(std::is_nothrow_move_assignable_v<T>) {
+			guard.active = false;
+		}
+		// Fill in the front.
 		try_move_ranges_backward(
-			as_split_ranges(
-				new_range_start - front_rem,
-				new_range_start
-			),
-			as_split_ranges(
-				new_range_stop - front_rem,
-				new_range_stop
-			)
+			as_split_ranges(this->begin(), start),
+			as_split_ranges(stop - (start - this->begin()), stop)
 		);
-		size_type right_overlap = right_shift - gap_size;
+		size_type back_count = count - (capacity() - initial_size);
+		assert(back_count == (initial_end - stop));
+		// Fill in the back.
 		try_move_ranges(
-			as_split_ranges(
-				this->end() - right_overlap,
-				this->end()
-			),
-			as_split_ranges(
-				this->begin(),
-				this->begin() + right_overlap
-			)
+			as_split_ranges(stop, initial_end),
+			as_split_ranges(this->begin(), this->begin() + back_count)
 		);
-		if(guards.second) {
-			guards.second->alloc = nullptr;
-		}
-		guards.first.alloc = nullptr;
-		if(this->start_ >= count) {
-			this->start_ -= count;
-		}
-		for(auto range: as_split_ranges(this->end(), this->end() + (capacity() - size()))) {
-			for(auto& elem: range) {
-				this->destory(std::addressof(elem));
-			}
-		}
+		gaurd.active = false;
+		this->pop_front_n(count);
 	}
 
 	constexpr void shift_left_no_overlap(size_type count) {
@@ -1513,13 +1887,18 @@ private:
 		count = capacity() - count;
 		auto new_begin = this->begin() + count;
 		new_begin.set_has_wrapped(false);
-		auto new_end = new_begin() + this->size();
+		auto new_end = new_begin + this->size();
 		auto guards = try_move_construct_ranges(
 			as_split_ranges(begin(), end()),
 			as_split_ranges(new_begin, new_end)
 		);
 		this->clear_fast();
 		this->start_ = new_begin.tagged_index_;
+	}
+
+	template <class Src, class Dest>
+	constexpr void try_move_ranges(Src src, Dest dest) {
+
 	}
 
 	template <class Src, class Dest>
@@ -1537,8 +1916,7 @@ private:
 				);
 			}
 			assert(dest_pos == dest_stop);
-		} else {
-			assert(src.size() == 1u);
+		} else if(src.size() == 1) {
 			auto src_pos = src.begin()->begin();
 			auto src_stop = src.begin()->end();
 			for(auto range: dest) {
@@ -1551,8 +1929,13 @@ private:
 				src_pos += range.size();
 			}
 			assert(src_pos == src_stop);
+		} else {
+			auto src_first
 		}
 	}
+
+	template <class Src, class Dest>
+	constexpr void do_copy_ranges(Src src, Dest dest) {
 
 	template <class Src, class Dest>
 	constexpr void try_move_ranges_backward(Src src, Dest dest) {
@@ -1662,21 +2045,51 @@ private:
 	}
 
 	template <class It>
-	constexpr void append_fast(It first, It last, size_type size_hint) {
-		append_fast(first, last);
-	}
-
-	template <class It>
-	constexpr void append_fast(It first, It last) {
+	constexpr It append_fast(It first, It last, size_type size_hint) {
 		for(auto range: get_spare_ranges()) {
 			for(auto& elem: range) {
-				if(first == last) {
-					return;
+				if(size_hint == 0u) {
+					return first;
 				}
-				this->construct(std::addressof(range), *first++);
+				--size_hint;
+				assert(first != last);
+				this->construct(std::addressof(elem), *first++);
 				++size_;
 			}
 		}
+		return first;
+	}
+
+	template <class It>
+	constexpr It append_fast(It first, It last) {
+		for(auto range: get_spare_ranges()) {
+			for(auto& elem: range) {
+				if(first == last) {
+					return first;
+				}
+				this->construct(std::addressof(elem), *first++);
+				++size_;
+			}
+		}
+		assert(first == last);
+		return first;
+	}
+
+	template <class SrcIt, class DestIt>
+	constexpr SrcIt append_and_replace_fast(SrcIt src_first, SrcIt src_last, DestIt dest_first, DestIt dest_last) {
+		// TODO: Measure whether this is faster than just doing both operations in batches.
+		for(auto range: get_spare_ranges()) {
+			for(auto& elem: range) {
+				if(dest_first == dest_last) {
+					return src_first;
+				}
+				this->construct(std::addressof(elem), *dest_first);
+				++size_;
+				*dest_first++ = *src_first++;
+			}
+		}
+		assert(dest_first == dest_last);
+		return src_first;
 	}
 
 	template <class It>
@@ -1913,6 +2326,14 @@ private:
 			return start + count;
 		}
 		return count - (cap - start);
+	}
+
+	static constexpr iterator as_mutable_iterator(const_iterator it) {
+		iterator res;
+		res.data_ = std::pointer_traits<pointer>::pointer_to(const_cast<value_type&>(*it.data_));
+		res.cap_ = it.cap_;
+		res.tagged_index_ = it.tagged_index_;
+		return res;
 	}
 
 	template <class U, class OtherAlloc>
