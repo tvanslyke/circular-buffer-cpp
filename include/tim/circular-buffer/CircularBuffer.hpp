@@ -23,6 +23,43 @@ struct CircularBuffer;
 
 namespace detail {
 
+template <
+	class It,
+	class SizeType,
+	std::enable_if_t<
+		std::is_same_v<
+			std::bidirectional_iterator_tag,
+			typename std::iterator_traits<It>::iterator_category
+		>,
+		bool
+	> = false
+>
+constexpr It get_position_in_range(It first, It last, SizeType count, size_type index) {
+	assert(count >= index);
+	auto dist_from_end = count - index;
+	if(index < dist_from_end) {
+		return std::next(first, index);
+	} else {
+		return std::prev(last, dist_from_end);
+	}
+}
+
+template <
+	class It,
+	class SizeType,
+	std::enable_if_t<
+		!std::is_same_v<
+			std::bidirectional_iterator_tag,
+			typename std::iterator_traits<It>::iterator_category
+		>,
+		bool
+	> = false
+>
+constexpr It get_position_in_range(It first, It last, SizeType count, size_type index) {
+	assert(count >= index);
+	return std::next(first, index);
+}
+
 template <class It>
 struct SimpleRange {
 	
@@ -72,6 +109,9 @@ private:
 	It end_;
 };
 
+template <class It>
+SimpleRange(It, It) -> SimpleRange<It>;
+
 template <class C>
 constexpr SimpleRange<typename C::const_reverse_iterator> reversed(const C& container) {
 	using std::rbegin;
@@ -109,95 +149,112 @@ struct iterator_type {
 
 } /* namespace traits */
 
-template <
-	class It,
-	class Dest,
-	std::enable_if_t<
-		!std::is_same_v<
-			std::random_access_iterator_tag,
-			typename std::iterator_traits<
-				typename traits::iterator_type<
-					typename std::iterator_traits<It>::value_type
-				>::type
-			>::iterator_category
-		>
-		|| !std::is_same_v<
-			std::random_access_iterator_tag,
-			typename std::iterator_traits<
-				typename traits::iterator_type<
-					typename std::iterator_traits<Dest>::value_type
-				>::type
-			>::iterator_category
-		>,
-		bool
-	> = false
->
-constexpr auto copy_ranges(It first, It last, Dest dest)
-	-> std::pair<Dest, typename traits::iterator_type<Dest>::type>
-{
-	using std::begin;
-	using std::end;
-	auto dest_pos = dest->begin();
-	auto dest_stop = dest->end();
-	for(auto pos = first; pos != last; ++pos) {
-		auto src_pos = pos->begin();
-		auto src_stop = pos->end();
-		while(src_pos != src_stop) {
-			if(dest_pos == dest_stop) {
-				++dest;
-				dest_pos = dest->begin();
-				dest_stop = dest->end();
-			}
-			
+template <class Int, class ... Args>
+constexpr Int add_modulo(Int base, Int value, Args ... args) {
+	auto do_add = [&base, &value](auto arg) {
+		if(arg >= base) {
+			arg %= base;
 		}
-	}
-	return dest_pos;
+		if(base - value <= arg) {
+			value = arg - (base - value);
+		}
+	};
+	std::apply(do_add, std::make_tuple(args ...));
+	return value;
 }
 
-template <
-	class It,
-	class Dest,
-	std::enable_if_t<
-		std::is_same_v<
-			std::random_access_iterator_tag,
-			typename std::iterator_traits<
-				typename traits::iterator_type<
-					typename std::iterator_traits<It>::value_type
-				>::type
-			>::iterator_category
-		>
-		&& std::is_same_v<
-			std::random_access_iterator_tag,
-			typename std::iterator_traits<
-				typename traits::iterator_type<
-					typename std::iterator_traits<Dest>::value_type
-				>::type
-			>::iterator_category
-		>,
-		bool
-	> = false
->
+template <class It, class Dest>
 constexpr auto copy_ranges(It first, It last, Dest dest)
-	-> std::pair<Dest, typename traits::iterator_type<Dest>::type>
+	-> std::pair<Dest, std::optional<typename traits::iterator_type<Dest>::type>>
 {
 	using std::begin;
 	using std::end;
+
+	if(first == last) {
+		return std::make_pair(dest, std::nullopt);
+	}
 	auto dest_pos = dest->begin();
 	auto dest_stop = dest->end();
-	for(auto pos = first; pos != last; ++pos) {
-		auto src_pos = pos->begin();
-		auto src_stop = pos->end();
-		while(src_pos != src_stop) {
-			if(dest_pos == dest_stop) {
-				++dest;
-				dest_pos = dest->begin();
-				dest_stop = dest->end();
+	auto src_pos = first->begin();
+	auto src_stop = first->end();
+	for(;;) {
+		auto src_sz = src_stop - src_pos;
+		auto dest_sz = dest_stop - dest_pos;
+		if(src_sz < dest_sz) {
+			dest_pos = std::copy(src_pos, src_stop, dest_pos);
+			assert(dest_stop - dest_pos == dest_sz - src_sz);
+			++first;
+			if(first == last) {
+				return std::make_pair(dest, dest_pos);
 			}
-			
+			src_pos = first->begin();
+			src_stop = first->end();
+		} else {
+			auto mid = src_pos + dest_sz;
+			dest_pos = std::copy(src_pos, mid, dest_pos);
+			assert(dest_pos == dest_stop);
+			++dest;
+			if(mid == src_stop) {
+				++first;
+				if(first == last) {
+					return std::make_pair(dest, std::nullopt);
+				}
+				src_pos = first->begin();
+				src_stop = first->end();
+			}
+			dest_pos = dest->begin();
+			dest_stop = dest->end();
 		}
 	}
-	return dest_pos;
 }
+
+template <class It, class Dest>
+constexpr auto copy_ranges_backward(It first, It last, Dest dest_last)
+	-> std::pair<Dest, std::optional<typename traits::iterator_type<Dest>::type>>
+{
+	using std::begin;
+	using std::end;
+
+	if(first == last) {
+		return std::make_pair(dest, std::nullopt);
+	}
+	--last;
+	--dest;
+	auto dest_pos = dest->begin();
+	auto dest_stop = dest->end();
+	auto src_pos = last->begin();
+	auto src_stop = last->end();
+	for(;;) {
+		auto src_sz = src_stop - src_pos;
+		auto dest_sz = dest_stop - dest_pos;
+		if(src_sz < dest_sz) {
+			dest_stop = std::copy_backward(src_pos, src_stop, dest_stop);
+			assert(dest_stop - dest_pos == dest_sz - src_sz);
+			if(first == last) {
+				return std::make_pair(dest, dest_stop);
+			}
+			--last;
+			src_pos = last->begin();
+			src_stop = last->end();
+		} else {
+			auto mid = src_stop - dest_sz;
+			dest_stop = std::copy_backward(mid, src_stop, dest_stop);
+			assert(dest_pos == dest_stop);
+			if(mid == src_pos) {
+				if(first == last) {
+					return std::make_pair(dest, std::nullopt);
+				}
+				--last;
+				src_pos = last->begin();
+				src_stop = last->end();
+			}
+			--dest;
+			dest_pos = dest->begin();
+			dest_stop = dest->end();
+		}
+	}
+}
+
 
 template <class T, class ... U>
 struct is_one_of: std::bool_constant<(std::is_same_v<T, U> || ...)> {}
@@ -1282,6 +1339,96 @@ public:
 		this->reserve_slow(new_cap, this->start_);
 	}
 
+	/**
+	 * @brief
+	 * Inserts elements from range [first, last) before pos.
+	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
+	 * 
+	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator,
+	 * but not LegacyForwardIterator.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 */
+	template <
+		class It,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				typename std::iterator_traits<It>::iterator_category, 
+				std::input_iterator_tag
+			>,
+			bool
+		> = false
+	>
+	constexpr void insert_back(const_iterator pos, It first, It last) {
+		if(first == last) {
+			return;
+		}
+		size_type count = std::distance(first, last);
+		size_type index = pos - cbegin();
+		auto initial_size = size();
+		while(size() < capacity() && first != last) {
+			emplace_back(*first++);
+		}
+		size_type count_inserted = size() - initial_size();
+		if(first == last) {
+			std::rotate(as_mutable_iterator(pos), end() - count_inserted, end);
+			return;	
+		}
+		auto tmp = make_temporary_buffer();
+		tmp.reserve_fast(grow_size(this->capacity()));
+		// Write directly to the final destination position.
+		tmp.start_ = detail::add_modulo(tmp.capacity(), this->start_, pos - cbegin(), count_inserted);
+		for(;;) {
+			do {
+				tmp.emplace_back(*first++);
+			} while(first != last && tmp.capacity() - tmp.size() > this->capacity());
+			if(first == last) {
+				break;
+			}
+			tmp.reserve_back(grow_size(tmp.capacity()));
+		}
+		// Append the elements we initially appended onto *this.
+		for(auto range: as_split_ranges(end() - count_inserted, end())) {
+			tmp.append_fast(
+				std::make_move_iterator(range.begin()), 
+				std::make_move_iterator(range.end())
+			);
+		}
+		// Then append the elements from the range that were initially at or after 'pos' from *this.
+		// (up to, but not including the elements we appended from [first, last)).
+		for(auto range: as_split_ranges(as_mutable_iterator(pos), this->end() - count_inserted)) {
+			tmp.append_fast(
+				std::make_move_iterator(range.begin()), 
+				std::make_move_iterator(range.end())
+			);
+		}
+		// Then prepend the elements preceding 'pos' from *this.
+		for(auto range: detail::reversed(as_split_ranges(this->begin(), as_mutable_iterator(pos)))) {
+			tmp.prepend_fast(
+				std::make_move_iterator(range.begin()), 
+				std::make_move_iterator(range.end())
+			);
+		}
+		this->commit(tmp);
+	}
+
+	/**
+	 * @brief
+	 * Inserts elements from range [first, last) before pos.
+	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
+	 * 
+	 * This overload only participates in overload resolution if InputIt qualifies as LegacyForwardIterator.
+	 * The behavior is undefined if first and last are iterators into *this.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -1290,19 +1437,107 @@ public:
 				std::forward_iterator_tag,
 				std::bidirectional_iterator_tag,
 				std::random_access_iterator_tag
-			>
-		>
+			>,
+			bool
+		> = false
 	>
-	constexpr void insert(const_iterator pos, It first, It last) {
+	constexpr void insert_back(const_iterator pos, It first, It last) {
 		size_type count = std::distance(first, last);
 		size_type index = pos - cbegin();
 		if(count <= this->capacity() - this->size()) {
-			this->insert_fast(pos, first, last, count);
+			this->insert_back_fast(pos, first, last, count);
 		} else {
-			this->insert_slow(pos, first, last, count);
+			this->insert_back_slow(pos, first, last, count);
 		}
 	}
 
+	/**
+	 * @brief
+	 * Inserts elements from range [first, last) before pos.
+	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of begin_index() will change accordingly (but end_index() will be unchanged).
+	 * 
+	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator,
+	 * but not LegacyForwardIterator.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	template <
+		class It,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				typename std::iterator_traits<It>::iterator_category, 
+				std::input_iterator_tag
+			>,
+			bool
+		> = false
+	>
+	constexpr void insert_front(const_iterator pos, It first, It last) {
+		if(first == last) {
+			return;
+		}
+		size_type count = std::distance(first, last);
+		size_type index = pos - cbegin();
+		auto initial_size = size();
+		while(size() < capacity() && first != last) {
+			emplace_front(*first++);
+		}
+		size_type count_inserted = size() - initial_size;
+		if(first == last) {
+			std::reverse(begin() + initial_size, end());
+			std::rotate(as_mutable_iterator(pos), end() - count_inserted, end);
+			return;	
+		}
+		auto tmp = make_temporary_buffer();
+		tmp.reserve_fast(grow_size(this->capacity()));
+		// Write directly to the final destination position.
+		if(this->start_ < count_inserted) {
+			tmp.start_ = tmp.capacity() - (count_inserted - this->start_);
+		} else {
+			tmp.start_ = this->start_ - count_inserted;
+		}
+		for(;;) {
+			do {
+				tmp.emplace_front(*first++);
+			} while(first != last && tmp.capacity() - tmp.size() > this->capacity());
+			if(first == last) {
+				break;
+			}
+			tmp.reserve_front(grow_size(tmp.capacity()));
+		}
+		std::reverse(tmp.begin(), tmp.end());
+		for(auto range: detail::reversed(as_split_ranges(this->begin(), as_mutable_iterator(pos)))) {
+			tmp.prepend_fast(
+				std::make_move_iterator(range.begin()), 
+				std::make_move_iterator(range.end())
+			);
+		}
+		for(auto range: as_split_ranges(as_mutable_iterator(pos), this->end())) {
+			tmp.append_fast(
+				std::make_move_iterator(range.begin()), 
+				std::make_move_iterator(range.end())
+			);
+		}
+		this->commit(tmp);
+	}
+
+	/**
+	 * @brief
+	 * Inserts elements from range [first, last) before pos.
+	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of begin_index() will change accordingly.
+	 *
+	 * This overload only participates in overload resolution if InputIt qualifies as LegacyForwardIterator.
+	 * The behavior is undefined if first and last are iterators into *this.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -1311,8 +1546,9 @@ public:
 				std::forward_iterator_tag,
 				std::bidirectional_iterator_tag,
 				std::random_access_iterator_tag
-			>
-		>
+			>,
+			bool
+		> = false
 	>
 	constexpr void insert_front(const_iterator pos, It first, It last) {
 		size_type count = std::distance(first, last);
@@ -1321,6 +1557,33 @@ public:
 			this->insert_front_fast(pos, first, last, count);
 		} else {
 			this->insert_front_slow(pos, first, last, count);
+		}
+	}
+
+	/**
+	 * @brief
+	 * Inserts elements from range [first, last) before pos.
+	 * If the number of elements before pos is less than the number of elements after pos, then 
+	 * the new values are inserted as if by calling insert_front(), otherwise they are inserted
+	 * as if by insert_back().
+	 *
+	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator.
+	 * The behavior is undefined if first and last are iterators into *this.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	template <class It>
+	constexpr void insert(const_iterator pos, It first, It last) {
+		// Insert in which ever way involves the least data movement.
+		size_type count_before = pos - begin();
+		size_type count_after = size() - count_before;
+		if(count_before < count_after) {
+			this->insert_front(pos, first, last);
+		} else {
+			this->insert_back(pos, first, last);
 		}
 	}
 
@@ -1383,7 +1646,7 @@ public:
 	template <class ... Args>
 	constexpr void emplace_front(Args&& ... args) {
 		if(size() < capacity()) {
-			emplace_back_fast(std::forward<Args>(args)...);
+			emplace_front_fast(std::forward<Args>(args)...);
 			return;
 		}
 		auto tmp = make_temporary_buffer();
@@ -1722,7 +1985,81 @@ private:
 	}
 
 	template <class It>
-	constexpr void insert_fast(const_iterator pos, It first, It last, size_type count) {
+	constexpr void insert_back_fast(const_iterator pos, It first, It last, size_type count) {
+		if(storage_is_split()) {
+			if(pos.get_has_wrapped()) {
+				return insert_back_simple(pos, first, last, count);
+			}
+			pointer pos_addr = pos.get_pointer();
+			pointer split_pos = data_ + cap_;
+			if(split_pos - pos_addr >= count) {
+				pointer first_range = pos_addr + count;
+				size_type first_range_size = (split_pos - pos_addr) - count;
+				pointer second_range = data_;
+				size_type second_range_size = end().get_pointer() - second_range;
+				if(second_range_size >= count) {
+					this->append_fast(
+						std::make_move_iterator(second_range + (second_range_size - count)),
+						std::make_move_iterator(second_range + second_range_size),
+						count
+					);
+					this->append_fast(
+						std::make_move_iterator(second_range + (second_range_size - count)),
+						std::make_move_iterator(second_range + second_range_size),
+						count
+					);
+				} else {
+					this->append_fast(
+						std::make_move_iterator(first_range + (first_range_size - (count - second_range_size))),
+						std::make_move_iterator(first_range + first_range_size),
+						count
+					);
+				}
+				// The inserted range won't need to be wrapped around to the front.
+			} else {
+
+			}
+		} else {
+			if((capacity() - (begin_index() + size()) >= count)) {
+				return insert_back_simple(pos, first, last, count);
+			}
+		}
+		if(count <= (pos.get_pointer() - (data_ + capacity()))) {
+		} else {
+			// inserted range *will* overlap with the physical end of the buffer
+
+		}
+
+	}
+
+	template <class It>
+	constexpr void insert_back_simple(const_iterator pos, It first, It last, size_type count) {
+		pointer start = as_mutable_iterator(pos).get_pointer();
+		pointer stop = end().get_pointer();
+		size_type dist_to_end = stop - start;
+		if(dist_to_end >= count) {
+			// Inserted range won't overlap with the end.
+			this->append_fast(
+				std::make_move_iterator(stop - count),
+				std::make_move_iterator(stop),
+				count
+			);
+			std::move_backwards(start, stop - count, stop);
+			std::copy(first, last, as_mutable_iterator(pos));
+		} else {
+			It mid = detail::get_position_in_range(first, last, count, dist_to_end);
+			this->append_fast(mid, last, count - dist_to_end);
+			this->append_fast(
+				std::make_move_iterator(start),
+				std::make_move_iterator(stop),
+				dist_to_end
+			);
+			std::copy(first, mid, as_mutable_iterator(pos));
+		}
+	}
+
+	template <class It>
+	constexpr void insert_back_fast(const_iterator pos, It first, It last, size_type count) {
 		assert(count <= size());
 		size_type dest_index = pos - begin();
 		if(dest_index == size()) {
@@ -1779,12 +2116,34 @@ private:
 			prepend_fast(first, last, count);
 			return;
 		}
-		size_type end_index = index + count;
-		assert(end_index <= capacity());
-		if(start_index >= size()) {
-			auto dest_ranges = this->get_ranges().last(count);
-			for(auto range: this->get_ranges().last(count)) {
-				first = append_and_replace_fast(
+		auto initial_begin = begin();
+		if(dest_index >= count) {
+			auto to_be_moved = get_ranges().first(dest_index).last(dest_index - count);
+			auto front_ranges = get_ranges().first(dest_index - count);
+			for(auto range: detail::reversed(get_ranges().first(count)) {
+				this->prepend(
+					std::make_move_iterator(range.begin()),
+					std::make_move_iterator(range.end())
+				);
+			}
+			move_ranges(to_be_moved, front_ranges);
+			auto dest_start = begin() + dest_index;
+			auto dest_stop = dest_range_start + count;
+			assert(dest_stop.get_pointer() == pos.get_pointer());
+			for(auto range: as_split_ranges(dest_start, dest_stop)) {
+				for(auto pos = range.begin(); pos != range.end(); ++pos) {
+					assert(first != last);
+					*pos = *first++;
+				}
+			}
+			assert(first == last);
+		} else {
+			size_type overlap = count - dest_index;
+			first = this->prepend_fast(first, last, overlap);
+			size_type remaining = count - overlap;
+			auto dest_ranges = this->get_ranges().last(count - overlap)
+			for(auto range: dest_ranges) {
+				first = prepend_and_replace_fast(
 					first,
 					last,
 					try_make_move_iterator(range.begin()),
@@ -1792,22 +2151,9 @@ private:
 				);
 			}
 			assert(first == last);
-		} else {
-			size_type overlap = end_index - size();
-			It overlap_start = std::next(first, count - overlap);
-			this->append_fast(overlap_start, last, overlap);
-			auto dest_ranges = this->get_ranges().last(count - overlap)
-			for(auto range: dest_ranges) {
-				first = append_and_replace_fast(
-					first,
-					overlap_start,
-					try_make_move_iterator(range.begin()),
-					try_make_move_iterator(range.end())
-				);
-			}
-			assert(first == overlap_start);
 		}
 	}
+
 	constexpr void shift_left_front_overlap(size_type count) {
 		size_type initial_size = size();
 		{
@@ -1898,11 +2244,6 @@ private:
 
 	template <class Src, class Dest>
 	constexpr void try_move_ranges(Src src, Dest dest) {
-
-	}
-
-	template <class Src, class Dest>
-	constexpr void try_move_ranges(Src src, Dest dest) {
 		assert(dest.total() == src.total());
 		if(dest.size() == 1) {
 			auto dest_pos = dest.begin()->begin();
@@ -1935,40 +2276,64 @@ private:
 	}
 
 	template <class Src, class Dest>
-	constexpr void do_copy_ranges(Src src, Dest dest) {
+	static constexpr void copy_ranges(Src src, Dest dest) {
+		assert(dest.total() == src.total());
+		(void)detail::copy_ranges(src.begin(), src.end(), dest.begin());
+		assert(outer == dest.end());
+		assert(!inner || inner == dest.end()[-1].end());
+	}
+
+	template <class Src, class Dest>
+	static constexpr void copy_ranges_backward(Src src, Dest dest) {
+		assert(dest.total() == src.total());
+		auto [outer, inner] = detail::copy_ranges_backward(src.begin(), src.end(), dest.end());
+		assert(outer == dest.begin());
+		assert(!inner || inner == dest.begin()->begin());
+	}
+
+	template <class Src, class Dest>
+	constexpr void move_ranges(Src src, Dest dest) {
+		copy_ranges(
+			SimpleRange(
+				std::make_move_iterator(src.begin()),
+				std::make_move_iterator(src.end())
+			),
+			dest
+		);
+	}
+
+	template <class Src, class Dest>
+	constexpr void move_ranges_backward(Src src, Dest dest) {
+		copy_ranges_backward(
+			SimpleRange(
+				std::make_move_iterator(src.begin()),
+				std::make_move_iterator(src.end())
+			),
+			dest
+		);
+	}
+
+	template <class Src, class Dest>
+	constexpr void try_move_ranges(Src src, Dest dest) {
+		copy_ranges(
+			SimpleRange(
+				try_make_move_iterator(src.begin()),
+				try_make_move_iterator(src.end())
+			),
+			dest
+		);
+	}
 
 	template <class Src, class Dest>
 	constexpr void try_move_ranges_backward(Src src, Dest dest) {
-		assert(dest.total() == src.total());
-		if(dest.size() == 1) {
-			auto dest_pos = dest.begin()->begin();
-			auto dest_stop = dest.begin()->end();
-			for(auto range: detail::reversed(src)) {
-				assert(dest_stop - dest_pos >= range.size());
-				dest_stop = std::copy_backward(
-					try_make_move_iterator(range.begin()),
-					try_make_move_iterator(range.end()),
-					dest_stop	
-				);
-			}
-			assert(dest_pos == dest_stop);
-		} else {
-			assert(src.size() == 1u);
-			auto src_start = src.begin()->begin();
-			auto src_stop = src.begin()->end();
-			for(auto range: detail::reversed(dest)) {
-				assert(src_stop - src_pos >= range.size());
-				std::copy_backward(
-					try_make_move_iterator(src_stop - range.size()),
-					try_make_move_iterator(src_stop),
-					range.end()
-				);
-				src_stop -= range.size();
-			}
-			assert(src_pos == src_stop);
-		}
+		copy_ranges_backward(
+			SimpleRange(
+				try_make_move_iterator(src.begin()),
+				try_make_move_iterator(src.end())
+			),
+			dest
+		);
 	}
-
 
 	template <class Src, class Dest>
 	constexpr auto try_move_construct_ranges(Src src, Dest dest)
@@ -2093,14 +2458,14 @@ private:
 	}
 
 	template <class It>
-	constexpr void prepend_fast(It first, It last) {
+	constexpr It prepend_fast(It first, It last) {
 		using iter_cat_type = typename std::iterator_traits<It>::iterator_category;
 		static_assert(!std::is_same_v<iter_cat_type, std::input_iterator_tag>, "");
-		prepend_fast(first, last, std::distance(first, last));
+		return prepend_fast(first, last, std::distance(first, last));
 	}
 
 	template <class It>
-	constexpr void prepend_fast(It first, It last, size_type size_hint) {
+	constexpr It prepend_fast(It first, It last, size_type size_hint) {
 		auto ranges = get_spare_ranges();
 		assert(size_hint <= ranges.total());
 		if(ranges.size() == 1 || (ranges.begin()[1].size() >= size_hint)) {
@@ -2112,7 +2477,6 @@ private:
 				this->construct(guard_.stop, *first++);
 			}
 			guard_.alloc = nullptr;
-			assert(first == last);
 		} else {
 			auto back_range = *ranges.begin();
 			const size_type back_range_count = (size_hint - ranges.begin()[1].size());
@@ -2135,8 +2499,8 @@ private:
 
 			front_guard_.alloc = nullptr;
 			back_guard_.alloc = nullptr;
-			assert(first == last);
 		}
+		return first;
 	}
 
 	constexpr void commit(CircularBuffer<T, AllocatorRef<Allocator>>& other) noexcept {
@@ -2334,6 +2698,10 @@ private:
 		res.cap_ = it.cap_;
 		res.tagged_index_ = it.tagged_index_;
 		return res;
+	}
+
+	constexpr bool storage_is_split() {
+		return (capacity() - begin_index()) < size();
 	}
 
 	template <class U, class OtherAlloc>
