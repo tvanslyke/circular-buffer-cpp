@@ -6,6 +6,11 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <type_traits>
+#include <optional>
+#include <iterator>
+#include <stdexcept>
+#include <array>
 
 #if defined(TIM_CICULAR_BUFFER_NO_USE_INTRINSICS) && defined(_MSC_VER)
 #include <immintrin.h>
@@ -34,7 +39,7 @@ template <
 		bool
 	> = false
 >
-constexpr It get_position_in_range(It first, It last, SizeType count, size_type index) {
+constexpr It get_position_in_range(It first, It last, SizeType count, SizeType index) {
 	assert(count >= index);
 	auto dist_from_end = count - index;
 	if(index < dist_from_end) {
@@ -55,7 +60,7 @@ template <
 		bool
 	> = false
 >
-constexpr It get_position_in_range(It first, It last, SizeType count, size_type index) {
+constexpr It get_position_in_range(It first, It last, SizeType count, SizeType index) {
 	assert(count >= index);
 	return std::next(first, index);
 }
@@ -88,20 +93,24 @@ struct SimpleRange {
 		return std::make_reverse_iterator(begin());
 	}
 
-	friend constexpr It begin(const SimpleRange& range) const {
+	friend constexpr It begin(const SimpleRange& range) {
 		return range.begin();
 	}
 
-	friend constexpr It end(const SimpleRange& range) const {
+	friend constexpr It end(const SimpleRange& range) {
 		return range.end();
 	}
 
-	friend constexpr std::reverse_iterator<It> rbegin(const SimpleRange& range) const {
+	friend constexpr std::reverse_iterator<It> rbegin(const SimpleRange& range) {
 		return std::make_reverse_iterator(range.end());
 	}
 
-	friend constexpr std::reverse_iterator<It> rend(const SimpleRange& range) const {
+	friend constexpr std::reverse_iterator<It> rend(const SimpleRange& range) {
 		return std::make_reverse_iterator(range.begin());
+	}
+
+	constexpr SimpleRange<std::move_iterator<It>> as_moving_range() const {
+		return SimpleRange<std::move_iterator<It>>(std::make_move_iterator(begin_), std::make_move_iterator(end_));
 	}
 
 private:
@@ -113,29 +122,286 @@ template <class It>
 SimpleRange(It, It) -> SimpleRange<It>;
 
 template <class C>
-constexpr SimpleRange<typename C::const_reverse_iterator> reversed(const C& container) {
+constexpr decltype(auto) reversed(C&& container) {
 	using std::rbegin;
 	using std::rend;
-	return SimpleRange<typename C::const_reverse_iterator>(rbegin(container), rend(container));
+	return SimpleRange(rbegin(std::forward<C>(container)), rend(std::forward<C>(container)));
 }
 
-template <class C>
-constexpr SimpleRange<typename C::reverse_iterator> reversed(C& container) {
-	using std::rbegin;
-	using std::rend;
-	return SimpleRange<typename C::reverse_iterator>(rbegin(container), rend(container));
+template <class T>
+struct SingleValueIterator
+{
+	using value_type        = T;
+	using reference         = const T&;
+	using pointer           = const T*;
+	using difference_type   = std::ptrdiff_t;
+	using iterator_category = std::random_access_iterator_tag;
+
+
+	SingleValueIterator() = default;
+	SingleValueIterator(const SingleValueIterator&) = default;
+	SingleValueIterator(SingleValueIterator&&) = default;
+
+	SingleValueIterator& operator=(const SingleValueIterator&) = default;
+	SingleValueIterator& operator=(SingleValueIterator&&) = default;
+
+	constexpr SingleValueIterator(const T* value, std::size_t pos):
+		value_(value),
+		pos_(pos)
+	{
+
+	}
+	
+	constexpr SingleValueIterator& operator++() {
+		++pos_;
+		return *this;
+	}
+
+	constexpr SingleValueIterator operator++(int) {
+		auto cpy = *this;
+		++*this;
+		return cpy;
+	}
+
+	constexpr SingleValueIterator& operator--() {
+		assert(pos_ != 0);
+		--pos_;
+		return *this;
+	}
+
+	constexpr SingleValueIterator operator--(int) {
+		auto cpy = *this;
+		--(*this);
+		return cpy;
+	}
+
+	constexpr reference operator*() const {
+		return *value_;
+	}
+
+	constexpr pointer operator->() const {
+		return value_;
+	}
+
+	constexpr SingleValueIterator& operator+=(difference_type rhs) {
+		pos_ += rhs;
+		return *this;
+	}
+
+	constexpr SingleValueIterator& operator-=(difference_type rhs) {
+		assert(pos_ >= rhs);
+		pos_ -= rhs;
+		return *this;
+	}
+
+	friend constexpr SingleValueIterator operator+(SingleValueIterator lhs, difference_type rhs) {
+		lhs += rhs;
+		return lhs;
+	}
+
+	friend constexpr SingleValueIterator operator+(difference_type lhs, SingleValueIterator rhs) {
+		lhs.pos_ += rhs;
+		return rhs;
+	}
+
+	friend constexpr SingleValueIterator operator-(SingleValueIterator lhs, difference_type rhs) {
+		lhs -= rhs;
+		return lhs;
+	}
+
+	friend constexpr difference_type operator-(SingleValueIterator lhs, SingleValueIterator rhs) {
+		return lhs.pos_ - rhs.pos_;
+	}
+
+	constexpr reference operator[](difference_type ofs) const {
+		return *value_;
+	}
+
+	friend constexpr bool operator==(SingleValueIterator lhs, SingleValueIterator rhs) {
+		return lhs.pos_ == rhs.pos_ && lhs.value_ == rhs.value_;
+	}
+	
+	friend constexpr bool operator!=(SingleValueIterator lhs, SingleValueIterator rhs) {
+		return not (lhs == rhs);
+	}
+
+	friend constexpr bool operator<(SingleValueIterator lhs, SingleValueIterator rhs) {
+		assert(lhs.value_ == rhs.value_);
+		return lhs.pos_ < rhs.pos_;
+	}
+
+	friend constexpr bool operator<=(SingleValueIterator lhs, SingleValueIterator rhs) {
+		assert(lhs.value_ == rhs.value_);
+		return lhs.pos_ <= rhs.pos_;
+	}
+	
+	friend constexpr bool operator>(SingleValueIterator lhs, SingleValueIterator rhs) {
+		assert(lhs.value_ == rhs.value_);
+		return lhs.pos_ > rhs.pos_;
+	}
+	
+	friend constexpr bool operator>=(SingleValueIterator lhs, SingleValueIterator rhs) {
+		assert(lhs.value_ == rhs.value_);
+		return lhs.pos_ >= rhs.pos_;
+	}
+
+private:
+	const T* value_ = nullptr;
+	difference_type pos_ = 0;
+};
+
+template <class T>
+struct DefaultValueIterator
+{
+	using value_type        = T;
+	using reference         = const T&;
+	using pointer           = const T*;
+	using difference_type   = std::ptrdiff_t;
+	using iterator_category = std::random_access_iterator_tag;
+
+
+	DefaultValueIterator() = default;
+	DefaultValueIterator(const DefaultValueIterator&) = default;
+	DefaultValueIterator(DefaultValueIterator&&) = default;
+
+	DefaultValueIterator& operator=(const DefaultValueIterator&) = default;
+	DefaultValueIterator& operator=(DefaultValueIterator&&) = default;
+
+	explicit constexpr DefaultValueIterator(std::size_t pos):
+		pos_(pos)
+	{
+
+	}
+	
+	constexpr DefaultValueIterator& operator++() {
+		++pos_;
+		return *this;
+	}
+
+	constexpr DefaultValueIterator operator++(int) {
+		auto cpy = *this;
+		++*this;
+		return cpy;
+	}
+
+	constexpr DefaultValueIterator& operator--() {
+		assert(pos_ != 0);
+		--pos_;
+		return *this;
+	}
+
+	constexpr DefaultValueIterator operator--(int) {
+		auto cpy = *this;
+		--(*this);
+		return cpy;
+	}
+
+	constexpr value_type operator*() const {
+		return value_type();
+	}
+
+	constexpr std::optional<value_type> operator->() const {
+		return std::optional<value_type>(std::in_place);
+	}
+
+	constexpr DefaultValueIterator& operator+=(difference_type rhs) {
+		pos_ += rhs;
+		return *this;
+	}
+
+	constexpr DefaultValueIterator& operator-=(difference_type rhs) {
+		assert(pos_ >= rhs);
+		pos_ -= rhs;
+		return *this;
+	}
+
+	friend constexpr DefaultValueIterator operator+(DefaultValueIterator lhs, difference_type rhs) {
+		lhs += rhs;
+		return lhs;
+	}
+
+	friend constexpr DefaultValueIterator operator+(difference_type lhs, DefaultValueIterator rhs) {
+		lhs.pos_ += rhs;
+		return rhs;
+	}
+
+	friend constexpr DefaultValueIterator operator-(DefaultValueIterator lhs, difference_type rhs) {
+		lhs -= rhs;
+		return lhs;
+	}
+
+	friend constexpr difference_type operator-(DefaultValueIterator lhs, DefaultValueIterator rhs) {
+		return lhs.pos_ - rhs.pos_;
+	}
+
+	constexpr value_type operator[](difference_type ofs) const {
+		return value_type();
+	}
+
+	friend constexpr bool operator==(DefaultValueIterator lhs, DefaultValueIterator rhs) {
+		return lhs.pos_ == rhs.pos_ && lhs.value_ == rhs.value_;
+	}
+	
+	friend constexpr bool operator!=(DefaultValueIterator lhs, DefaultValueIterator rhs) {
+		return not (lhs == rhs);
+	}
+
+	friend constexpr bool operator<(DefaultValueIterator lhs, DefaultValueIterator rhs) {
+		assert(lhs.value_ == rhs.value_);
+		return lhs.pos_ < rhs.pos_;
+	}
+
+	friend constexpr bool operator<=(DefaultValueIterator lhs, DefaultValueIterator rhs) {
+		assert(lhs.value_ == rhs.value_);
+		return lhs.pos_ <= rhs.pos_;
+	}
+	
+	friend constexpr bool operator>(DefaultValueIterator lhs, DefaultValueIterator rhs) {
+		assert(lhs.value_ == rhs.value_);
+		return lhs.pos_ > rhs.pos_;
+	}
+	
+	friend constexpr bool operator>=(DefaultValueIterator lhs, DefaultValueIterator rhs) {
+		assert(lhs.value_ == rhs.value_);
+		return lhs.pos_ >= rhs.pos_;
+	}
+
+private:
+	difference_type pos_ = 0;
+};
+
+
+
+template <class T>
+constexpr auto make_single_value_range(const T& value, std::size_t count)
+	-> SimpleRange<SingleValueIterator<T>>
+{
+	return SimpleRange<SingleValueIterator<T>>(
+		SingleValueIterator<T>(std::addressof(value), 0),
+		SingleValueIterator<T>(std::addressof(value), static_cast<std::ptrdiff_t>(count))
+	);
 }
+
 
 namespace traits {
+
+namespace detail {
+template <class T>
+constexpr decltype(auto) begin_proxy(T&& v)
+{
+	using std::begin;
+	return begin(v);
+}
+
+} /* namespace detail */
 
 template <class C>
 struct iterator_type {
 	template <class T>
 	struct trait { using type = T; };
 
-	using std::begin;
 
-	template <class Range, class Iter = std::decay_t<decltype(begin(std::declval<Range&>()))>>
+	template <class Range, class Iter = std::decay_t<decltype(detail::begin_proxy(std::declval<Range&>()))>>
 	static constexpr auto helper(int) -> trait<Iter> {
 
 	};
@@ -144,7 +410,8 @@ struct iterator_type {
 	static constexpr auto helper(...) -> trait<void> {
 
 	};
-	using type = typename decltype(helper<Range>(0))::type;
+
+	using type = typename decltype(helper<C>(0))::type;
 };
 
 } /* namespace traits */
@@ -163,9 +430,31 @@ constexpr Int add_modulo(Int base, Int value, Args ... args) {
 	return value;
 }
 
+
+template <class It>
+constexpr It get_point_in_iterator_range(It first, It last, typename std::iterator_traits<It>::difference_type idx, typename std::iterator_traits<It>::difference_type count)
+{
+	using cat = typename std::iterator_traits<It>::iterator_category;
+	if constexpr (std::is_same_v<cat, std::bidirectional_iterator_tag>)
+	{
+		if (idx <= count - idx)
+		{
+			return std::next(first, idx);
+		}
+		else
+		{
+			return std::prev(last, count - idx);
+		}
+	}
+	else
+	{
+		return std::next(first, idx);
+	}
+}
+
 template <class It, class Dest>
 constexpr auto copy_ranges(It first, It last, Dest dest)
-	-> std::pair<Dest, std::optional<typename traits::iterator_type<Dest>::type>>
+	-> std::pair<Dest, std::optional<typename traits::iterator_type<typename std::iterator_traits<Dest>::value_type>::type>>
 {
 	using std::begin;
 	using std::end;
@@ -209,8 +498,8 @@ constexpr auto copy_ranges(It first, It last, Dest dest)
 }
 
 template <class It, class Dest>
-constexpr auto copy_ranges_backward(It first, It last, Dest dest_last)
-	-> std::pair<Dest, std::optional<typename traits::iterator_type<Dest>::type>>
+constexpr auto copy_ranges_backward(It first, It last, Dest dest)
+	-> std::pair<Dest, std::optional<typename traits::iterator_type<typename std::iterator_traits<Dest>::value_type>::type>>
 {
 	using std::begin;
 	using std::end;
@@ -253,23 +542,24 @@ constexpr auto copy_ranges_backward(It first, It last, Dest dest_last)
 			dest_stop = dest->end();
 		}
 	}
+	__assume(0);
+	assert(false);
 }
 
 
 template <class T, class ... U>
-struct is_one_of: std::bool_constant<(std::is_same_v<T, U> || ...)> {}
+struct is_one_of : std::bool_constant<(std::is_same_v<T, U> || ...)> {};
 
 template <class T, class ... U>
 inline constexpr bool is_one_of_v = is_one_of<T, U...>::value;
 
-
 template <class A, class T, bool = std::is_trivially_destructible_v<T>>
 struct is_trivially_allocator_destructible;
 
-template <class A, class T, bool = std::is_trivially_destructible_v<T>>
+template <class A, class T>
 struct is_trivially_allocator_destructible<A, T, false>: std::false_type {};
 
-template <class A, class T, bool = std::is_trivially_destructible_v<T>>
+template <class A, class T>
 struct is_trivially_allocator_destructible<A, T, true>: std::false_type {
 private:
 	template <class U, class = decltype(std::declval<A&>().destroy(std::declval<T*>()))>
@@ -321,6 +611,15 @@ struct is_move_insertible: decltype(test_is_move_insertable<A, T>()) {};
 template <class A, class T>
 inline constexpr bool is_move_insertible_v = is_move_insertible<A, T>::value;
 
+template <class It>
+struct is_move_iterator : std::false_type {};
+
+template <class It>
+struct is_move_iterator<std::move_iterator<It>> : std::true_type {};
+
+template <class It>
+inline constexpr bool is_move_iterator_v = is_move_iterator<It>::value;
+
 template <class T>
 struct ManualScopeGuard {
 
@@ -338,115 +637,6 @@ template <class T>
 ManualScopeGuard<std::decay_t<T>> make_manual_scope_guard(T&& action) {
 	return ManualScopeGuard<std::decay_t<T>>{std::forward<T>(action), true};
 }
-
-struct NonInt{};
-
-template <class Int, bool = std::is_integral_v<Int>>
-struct next_widest_int;
-
-template <class Int>
-struct next_widest_int<Int, false> {};
-
-template <class Int>
-struct next_widest_int<Int, true> {
-private:
-	using signed_types = std::tuple<char, short, int, long, long long, std::intmax_t>;
-	using unsigned_types = std::tuple<
-		unsigned char,
-		unsigned short,
-		unsigned int,
-		unsigned long,
-		unsigned long long,
-		std::uintmax_t
-	>;
-	template <class T>
-	struct Tag {};
-	
-	template <class ... Types>
-	static constexpr std::ptrdiff_t index(Tag<std::tuple<Types...>>) {
-		constexpr std::array<std::size_t, sizeof...(Types)> sizes{sizeof(Types)...};
-		for(std::size_t i = 0; i < sizes.size(); ++i) {
-			if(sizes[i] > sizeof(Int)) {
-				return i;
-			} 
-		}
-		return sizes.size();
-	}
-	static constexpr std::size_t signed_index = index(Tag<signed_types>{});
-	static constexpr std::size_t unsigned_index = index(Tag<unsigned_types>{});
-
-public:
-	using type = std::conditional_t<
-		std::is_signed_v<Int>,
-		std::conditional_t<
-			(signed_index < std::tuple_size_v<signed_types>),
-			std::tuple_element_t<signed_types, signed_index>,
-			NonInt
-		>,
-		std::conditional_t<
-			(unsigned_index < std::tuple_size_v<unsigned_types>),
-			std::tuple_element_t<unsigned_types, unsigned_index>,
-			NonInt
-		>
-	>;
-};
-
-template <class Int>
-using next_widest_int_t = typename next_widest_int_t<Int>::type;
-
-template <class Int, bool = std::is_integral_v<Int>>
-struct next_shortest_int;
-
-template <class Int>
-struct next_shortest_int<Int, false> {};
-
-template <class Int>
-struct next_shortest_int<Int, true> {
-private:
-	using signed_types = std::tuple<char, short, int, long, long long, std::intmax_t>;
-	using unsigned_types = std::tuple<
-		unsigned char,
-		unsigned short,
-		unsigned int,
-		unsigned long,
-		unsigned long long,
-		std::uintmax_t
-	>;
-	template <class T>
-	struct Tag {};
-	
-	template <class ... Types>
-	static constexpr std::ptrdiff_t index(Tag<std::tuple<Types...>>) {
-		constexpr std::array<std::size_t, sizeof...(Types)> sizes{sizeof(Types)...};
-		for(std::size_t i = 0; i < sizes.size(); ++i) {
-			if(sizes[i] >= sizeof(Int)) {
-				if(i > 0u) {
-					return i - 1u;
-				}
-			} 
-		}
-		return sizes.size();
-	}
-	static constexpr std::size_t signed_index = index(Tag<signed_types>{});
-	static constexpr std::size_t unsigned_index = index(Tag<unsigned_types>{});
-public:
-	using type = std::conditional_t<
-		std::is_signed_v<Int>,
-		std::conditional_t<
-			(signed_index < std::tuple_size_v<signed_types>),
-			std::tuple_element_t<signed_types, signed_index>,
-			NonInt
-		>,
-		std::conditional_t<
-			(unsigned_index < std::tuple_size_v<unsigned_types>),
-			std::tuple_element_t<unsigned_types, unsigned_index>,
-			NonInt
-		>
-	>;
-};
-
-template <class Int>
-using next_shortest_int_t = typename next_shortest_int_t<Int>::type;
 
 template <class T>
 inline constexpr std::size_t bit_count = static_cast<std::size_t>(CHAR_BIT) * sizeof(T);
@@ -522,7 +712,7 @@ private:
 template <class Allocator>
 class AllocatorRef {
 private:
-	using alloc_traits = std::allocator_traits<A>;
+	using alloc_traits = std::allocator_traits<Allocator>;
 public:
 	using pointer            = typename alloc_traits::pointer;
 	using const_pointer      = typename alloc_traits::const_pointer;
@@ -534,13 +724,13 @@ public:
 
 	using is_always_equal                        = alloc_traits::is_always_equal;
 	using propagate_on_container_swap            = alloc_traits::propagate_on_container_swap;
-	using propagate_on_container_move_assignment = !is_always_equal;
-	using propagate_on_container_copy_assignment = !is_always_equal;
+	using propagate_on_container_move_assignment = alloc_traits::propagate_on_container_move_assignment;
+	using propagate_on_container_copy_assignment = alloc_traits::propagate_on_container_copy_assignment;
 	
 
 	template <class U>
 	struct rebind {
-		using other = typename alloc_traits<U>::template rebind_alloc<U>::other;
+		using other = typename alloc_traits::template rebind_alloc<U>::other;
 	};
 
 	AllocatorRef() = delete;
@@ -549,13 +739,13 @@ public:
 	AllocatorRef& operator=(const AllocatorRef&) = default;
 	AllocatorRef& operator=(AllocatorRef&&) = default;
 
-	constexpr AllocatorRef(A& a):
+	constexpr AllocatorRef(Allocator& a):
 		ref_(a)
 	{
 		
 	}
 
-	explicit constexpr operator A&() const {
+	explicit constexpr operator Allocator&() const {
 		return *ref_;
 	}
 
@@ -565,7 +755,7 @@ public:
 
 	[[nodiscard]]
 	constexpr pointer allocate(size_type sz) const {
-		return alloc_traits::allocate(*ref_, ptr);
+		return alloc_traits::allocate(*ref_, sz);
 	}
 
 	constexpr void deallocate(pointer p, size_type sz) const {
@@ -575,15 +765,15 @@ public:
 	template <
 		class T,
 		class ... Args,
-		class = decltype(alloc_traits::construct(std::declval<A&>(), std::declval<T*>(), std::declval<Args&&>()...))
+		class = decltype(alloc_traits::construct(std::declval<Allocator&>(), std::declval<T*>(), std::declval<Args&&>()...))
 	>
 	constexpr void construct(T* ptr, Args&& ... args) const {
 		return alloc_traits::construct(ptr, std::forward<Args>(args)...);
 	}
 
-	template <class P, class = decltype(alloc_traits::destroy(std::declval<A&>(), std::declval<P>()))>
+	template <class P, class = decltype(alloc_traits::destroy(std::declval<Allocator&>(), std::declval<P>()))>
 	constexpr auto destroy(P ptr) const
-		-> decltype(alloc_traits::destroy(std::declval<A&>(), std::declval<P>()))
+		-> decltype(alloc_traits::destroy(std::declval<Allocator&>(), std::declval<P>()))
 	{
 		return alloc_traits::destroy(*ref_, ptr);
 	}
@@ -592,43 +782,34 @@ public:
 		return alloc_traits::max_size(*ref_);
 	}
 
-	friend constexpr operator==(AllocatorRef lhs, AllocatorRef rhs) noexcept {
+	friend constexpr bool operator==(AllocatorRef lhs, AllocatorRef rhs) noexcept {
 		return is_always_equal::value || (lhs.ref_ == rhs.ref_) || (*lhs.ref_ == *rhs.ref_);
 	}
 
-	friend constexpr operator!=(AllocatorRef lhs, AllocatorRef rhs) noexcept {
+	friend constexpr bool operator!=(AllocatorRef lhs, AllocatorRef rhs) noexcept {
 		return !(lhs == rhs);
 	}
 
 private:
-	A* ref_;
+	Allocator* ref_;
 }; 
 
-} /* namespace detail */
 
 template <bool IsConst, class T, class Allocator>
-struct CircularBufferIterator {
-private:
-	using reference_type = std::conditional_t<
-		IsConst,
-		const CircularVector&,
-		CircularVector&
-	>;
-	using size_type = std::size_t;
-public:
+struct CircularBufferIteratorBase
+{
+protected:
+	using size_type = typename std::allocator_traits<Allocator>::size_type;
+
+	static constexpr size_type tag_mask = ~(~size_type(0) >> 1);
 	using difference_type   = std::ptrdiff_t;
 	using iterator_category = std::random_access_iterator_tag;
 	using reference         = std::conditional_t<IsConst, const T&, T&>;
-	using pointer           = std::conditional_t<
-		IsConst, 
-		typename std::allocator_traits<Allocator>::const_pointer,
-		typename std::allocator_traits<Allocator>::pointer
-	>;
+	using pointer           = std::conditional_t<IsConst, typename std::allocator_traits<Allocator>::const_pointer, typename std::allocator_traits<Allocator>::pointer>;
 	using value_type        = T;
 
 
-private:
-	constexpr CircularBufferIterator(pointer data, size_type cap, size_type index, bool is_wrapped):
+	constexpr CircularBufferIteratorBase(pointer data, size_type cap, size_type index, bool is_wrapped):
 		data_(data),
 		cap_(cap),
 		tagged_index_(index)
@@ -638,22 +819,140 @@ private:
 		}
 	}
 
-public:
-	CircularBufferIterator() = default;
-	CircularBufferIterator(const CircularBufferIterator&) = default;
-	CircularBufferIterator(CircularBufferIterator&&) = default;
-
-	CircularBufferIterator& operator=(const CircularBufferIterator&) = default;
-	CircularBufferIterator& operator=(CircularBufferIterator&&) = default;
-
-	template <bool OtherIsConst, std::enable_if_t<(IsConst && !OtherIsConst), bool> = false>
-	constexpr CircularBufferIterator(const CircularBufferIterator<OtherIsconst, T, Allocator>& other):
-		data_(other.data_),
-		cap_(other.cap_),
-		tagged_index_(other.tagged_index_)
+	constexpr CircularBufferIteratorBase(pointer data, size_type cap, size_type tagged_index):
+		data_(data),
+		cap_(cap),
+		tagged_index_(tagged_index)
 	{
 		
 	}
+public:
+	constexpr CircularBufferIteratorBase() = default;
+	constexpr CircularBufferIteratorBase(const CircularBufferIteratorBase&) = default;
+	constexpr CircularBufferIteratorBase(CircularBufferIteratorBase&&) = default;
+
+	constexpr CircularBufferIteratorBase& operator=(const CircularBufferIteratorBase&) = default;
+	constexpr CircularBufferIteratorBase& operator=(CircularBufferIteratorBase&&) = default;
+
+
+protected:
+	constexpr pointer get_pointer() const {
+		return data_ + get_index();
+	}
+
+	constexpr value_type* get_raw_pointer() const {
+		return std::addressof(data_[get_index()]);
+	}
+
+	constexpr void add(size_type count) {
+		assert(count <= cap_);
+		if(get_has_wrapped()) {
+			assert(count <= (cap_ - get_index()));
+			tagged_index_ += count;
+		} else {
+			size_type rem = cap_ - tagged_index_;
+			if(rem > count) {
+				tagged_index_ += count;
+			} else {
+				tagged_index_ = count - rem;
+			}
+		}
+	}
+	
+	constexpr void subtract(size_type count) {
+		assert(count <= cap_);
+		if(get_has_wrapped()) {
+			if(tagged_index_ >= count) {
+				tagged_index_ -= count;
+			} else {
+				tagged_index_ = cap_ - (count - (tagged_index_ + 1));
+			}
+		} else {
+			assert(count <= get_index());
+			tagged_index_ -= count;
+		}
+	}
+
+	constexpr bool get_has_wrapped() const {
+		return (tagged_index_ & tag_mask) != 0u;
+	}
+
+	constexpr void set_has_wrapped(bool value) {
+		if(value) {
+			tagged_index_ |= tag_mask;
+		} else {
+			tagged_index_ &= ~tag_mask;
+		}
+	}
+
+	constexpr size_type get_index() const {
+		return tagged_index_ & ~tag_mask;
+	}
+
+	constexpr void set_index(size_type new_value) {
+		assert((new_value & tag_mask) == 0u);
+		tagged_index_ = new_value | (tagged_index_ & tag_mask);
+	}
+
+	template <class T, class Allocator>
+	friend struct CircularBuffer;
+	friend struct CircularBufferIterator;
+	pointer data_ = nullptr;
+	size_type cap_ = 0;
+	size_type tagged_index_ = 0;
+};
+
+
+} /* namespace detail */
+
+template <class T, class Allocator>
+struct CircularBufferIterator;
+template <class T, class Allocator>
+struct ConstCircularBufferIterator;
+
+template <class T, class Allocator>
+struct CircularBufferIterator: public detail::CircularBufferIteratorBase<false, T, Allocator> {
+private:
+	using base_type = detail::CircularBufferIteratorBase<false, T, Allocator>;
+	template <class T, class Allocator>
+	friend struct CircularBuffer;
+	friend struct ConstCircularBufferIterator<T, Allocator>;
+	using size_type = typename base_type::size_type;
+
+	using base_type::data_;
+	using base_type::cap_;
+	using base_type::tagged_index_;
+	using base_type::get_pointer;
+	using base_type::get_raw_pointer;
+	using base_type::add;
+	using base_type::subtract;
+	using base_type::get_has_wrapped;
+	using base_type::set_has_wrapped;
+	using base_type::get_index;
+	using base_type::set_index;
+
+public:
+	using difference_type   = typename base_type::difference_type;
+	using iterator_category = typename base_type::iterator_category;
+	using reference	        = typename base_type::reference;
+	using pointer           = typename base_type::pointer;
+	using value_type        = typename base_type::value_type;
+
+
+private:
+	constexpr CircularBufferIterator(pointer data, size_type cap, size_type index, bool is_wrapped):
+		base_type(data, cap, index, is_wrapped)
+	{
+	
+	}
+
+public:
+	constexpr CircularBufferIterator() = default;
+	constexpr CircularBufferIterator(const CircularBufferIterator&) = default;
+	constexpr CircularBufferIterator(CircularBufferIterator&&) = default;
+
+	constexpr CircularBufferIterator& operator=(const CircularBufferIterator&) = default;
+	constexpr CircularBufferIterator& operator=(CircularBufferIterator&&) = default;
 
 	constexpr CircularBufferIterator& operator++() {
 		assert(data_);
@@ -675,7 +974,7 @@ public:
 	constexpr CircularBufferIterator& operator--() {
 		assert(data_);
 		if(get_index() == 0u) {
-			assert(get_has_wrapped());
+			assert(get_has_wrapped() && "Invalid decriment on CircularBufferIterator.  Decrementing at the beginning of the buffer, but the buffer doesn't wrap around.");
 			tagged_index_ = cap_ - 1;
 			assert(!get_has_wrapped());
 		} else {
@@ -685,7 +984,7 @@ public:
 	}
 
 	constexpr CircularBufferIterator operator--(int) {
-		auto cpy = *This;
+		auto cpy = *this;
 		--(*this);
 		return cpy;
 	}
@@ -704,6 +1003,7 @@ public:
 		} else {
 			this->subtract(static_cast<size_type>(-(rhs + 1) + 1));
 		}
+		return *this;
 	}
 
 	constexpr CircularBufferIterator& operator-=(difference_type rhs) {
@@ -712,6 +1012,7 @@ public:
 		} else {
 			this->subtract(rhs);
 		}
+		return *this;
 	}
 
 	friend constexpr CircularBufferIterator operator+(CircularBufferIterator lhs, difference_type rhs) {
@@ -745,7 +1046,6 @@ public:
 				return lhs.tagged_index_ - rhs.tagged_index_;
 			}
 		}
-		return pos_ - other.pos_;
 	}
 
 	constexpr reference operator[](difference_type ofs) const {
@@ -770,98 +1070,244 @@ public:
 		return lhs.tagged_index_ < rhs.tagged_index_;
 	}
 
-	friend constexpr bool operator<=(CircularBufferIterator other) {
+	friend constexpr bool operator<=(CircularBufferIterator lhs, CircularBufferIterator rhs) {
 		assert(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ <= rhs.tagged_index_;
 	}
 	
-	friend constexpr bool operator>(CircularBufferIterator other) {
+	friend constexpr bool operator>(CircularBufferIterator lhs, CircularBufferIterator rhs) {
 		assert(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ > rhs.tagged_index_;
 	}
 	
-	friend constexpr bool operator>=(CircularBufferIterator other) {
+	friend constexpr bool operator>=(CircularBufferIterator lhs, CircularBufferIterator rhs) {
 		assert(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ >= rhs.tagged_index_;
 	}
-	
-private:
 
-	constexpr pointer get_pointer() const {
-		return data_ + get_index();
-	}
-
-	constexpr pointer get_raw_pointer() const {
-		return std::addressof(**this);
-	}
-
-	constexpr void add(size_type count) {
-		assert(count <= cap_);
-		if(get_has_wrapped()) {
-			assert(count <= (cap_ - get_index()));
-			tagged_index_ += count;
-		} else {
-			size_type rem = cap_ - tagged_index_;
-			if(rem > count) {
-				tagged_index_ += count;
-			} else {
-				tagged_index_ = count - rem;
-			}
-		}
-	}
-	
-	constexpr void subtract(size_type count) {
-		assert(count <= cap_);
-		if(get_has_wrapped()) {
-			if(tagged_index_ >= count) {
-				tagged_index_ -= count;
-			} else {
-				tagged_index_ = cap_ - (count - (tagged_index_ + 1));
-			}
-		} else {
-			assert(count <= get_index());
-			tagged_index_ -= count;
-		}
-	}
-
-	constexpr bool get_has_wrapped() const {
-		return (tagged_index_ & ~(~size_type(0) >> 1)) != 0u;
-	}
-
-	constexpr void set_has_wrapped(bool value) const {
-		if(value) {
-			tagged_index_ |= ~(~size_type(0) >> 1);
-		} else {
-			tagged_index_ &= (~size_type(0) >> 1);
-		}
-	}
-
-	constexpr size_type get_index() const {
-		return tagged_index_ & (~size_type(0) >> 1);
-	}
-
-	constexpr size_type set_index(size_type new_value) const {
-		assert((new_value & ~(~size_type(0) >> 1)) == 0u);
-		tagged_index_ = new_value_ | (tagged_index_ & ~(~size_type(0) >> 1));
-	}
-
-	template <class T, class Allocator>
-	friend class CircularBuffer;
-	pointer data_ = nullptr;
-	size_type cap_ = 0;
-	size_type tagged_index_ = 0;
 };
 
 
 template <class T, class Allocator>
-struct CircularBuffer: private AllocatorBase<Allocator> {
-	using size_type = std::size_t;
+struct ConstCircularBufferIterator: public detail::CircularBufferIteratorBase<true, T, Allocator> {
+private:
+	using base_type = detail::CircularBufferIteratorBase<true, T, Allocator>;
+	template <class T, class Allocator>
+	friend struct CircularBuffer;
+	friend struct CircularBufferIterator<T, Allocator>;
+	using size_type = typename base_type::size_type;
+
+	using base_type::data_;
+	using base_type::cap_;
+	using base_type::tagged_index_;
+	using base_type::get_pointer;
+	using base_type::get_raw_pointer;
+	using base_type::add;
+	using base_type::subtract;
+	using base_type::get_has_wrapped;
+	using base_type::set_has_wrapped;
+	using base_type::get_index;
+	using base_type::set_index;
+
+
+public:
+	using difference_type   = typename base_type::difference_type;
+	using iterator_category = typename base_type::iterator_category;
+	using reference	        = typename base_type::reference;
+	using pointer           = typename base_type::pointer;
+	using value_type        = typename base_type::value_type;
+
+
+private:
+	constexpr ConstCircularBufferIterator(pointer data, size_type cap, size_type index, bool is_wrapped):
+		base_type(data, cap, index, is_wrapped)
+	{
+		
+	}
+
+public:
+	constexpr ConstCircularBufferIterator() = default;
+	constexpr ConstCircularBufferIterator(const ConstCircularBufferIterator&) = default;
+	constexpr ConstCircularBufferIterator(ConstCircularBufferIterator&&) = default;
+
+	constexpr ConstCircularBufferIterator& operator=(const ConstCircularBufferIterator&) = default;
+	constexpr ConstCircularBufferIterator& operator=(ConstCircularBufferIterator&&) = default;
+	
+	constexpr ConstCircularBufferIterator(const CircularBufferIterator<T, Allocator>& other) :
+		base_type(other.data_, other.cap_, other.tagged_index_)
+	{
+
+	}
+
+	constexpr ConstCircularBufferIterator& operator++() {
+		assert(data_);
+		if(cap_ - get_index() > 1) {
+			++tagged_index_;
+		} else {
+			set_index(0u);
+			set_has_wrapped(true);
+		}
+		return *this;
+	}
+
+	constexpr ConstCircularBufferIterator operator++(int) {
+		auto cpy = *this;
+		++*this;
+		return cpy;
+	}
+
+	constexpr ConstCircularBufferIterator& operator--() {
+		assert(data_);
+		if(get_index() == 0u) {
+			assert(get_has_wrapped() && "Invalid decriment on ConstCircularBufferIterator.  Decrementing at the beginning of the buffer, but the buffer doesn't wrap around.");
+			tagged_index_ = cap_ - 1;
+			assert(!get_has_wrapped());
+		} else {
+			--tagged_index_;
+		}
+		return *this;
+	}
+
+	constexpr ConstCircularBufferIterator operator--(int) {
+		auto cpy = *this;
+		--(*this);
+		return cpy;
+	}
+
+	constexpr reference operator*() const {
+		return data_[get_index()];
+	}
+
+	constexpr pointer operator->() const {
+		return get_pointer();
+	}
+
+	constexpr ConstCircularBufferIterator& operator+=(difference_type rhs) {
+		if(rhs >= 0) {
+			this->add(rhs);
+		} else {
+			this->subtract(static_cast<size_type>(-(rhs + 1) + 1));
+		}
+	}
+
+	constexpr ConstCircularBufferIterator& operator-=(difference_type rhs) {
+		if(rhs <= 0) {
+			this->add(static_cast<size_type>(-(rhs + 1) + 1));
+		} else {
+			this->subtract(rhs);
+		}
+	}
+
+	friend constexpr ConstCircularBufferIterator operator+(ConstCircularBufferIterator lhs, difference_type rhs) {
+		lhs += rhs;
+		return lhs;
+	}
+
+	friend constexpr ConstCircularBufferIterator operator+(difference_type lhs, ConstCircularBufferIterator rhs) {
+		rhs += lhs;
+		return rhs;
+	}
+
+	friend constexpr ConstCircularBufferIterator operator-(ConstCircularBufferIterator lhs, difference_type rhs) {
+		lhs -= rhs;
+		return lhs;
+	}
+
+	friend constexpr difference_type operator-(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
+		assert(lhs.data_ == lhs.data_);
+		assert(lhs.cap_ == lhs.cap_);
+		if(lhs.get_has_wrapped()) {
+			if(rhs.get_has_wrapped()) {
+				return lhs.tagged_index_ - rhs.tagged_index_;
+			} else {
+				return lhs.get_index() + (rhs.cap_ - rhs.tagged_index_);
+			}
+		} else {
+			if(rhs.get_has_wrapped()) {
+				return -static_cast<difference_type>(rhs.get_index() + (lhs.cap_ - lhs.tagged_index_));
+			} else {
+				return lhs.tagged_index_ - rhs.tagged_index_;
+			}
+		}
+	}
+
+	constexpr reference operator[](difference_type ofs) const {
+		return *(*this + ofs);
+	}
+
+	friend constexpr bool operator==(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
+		if(lhs.data_ == rhs.data_) {
+			assert(lhs.cap_ == rhs.cap_);
+			return lhs.tagged_index_ == rhs.tagged_index_;
+		} else {
+			return false;
+		}
+	}
+	
+	friend constexpr bool operator!=(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
+		return not (lhs == rhs);
+	}
+
+	friend constexpr bool operator<(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
+		assert(lhs.data_ == rhs.data_);
+		return lhs.tagged_index_ < rhs.tagged_index_;
+	}
+
+	friend constexpr bool operator<=(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
+		assert(lhs.data_ == rhs.data_);
+		return lhs.tagged_index_ <= rhs.tagged_index_;
+	}
+	
+	friend constexpr bool operator>(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
+		assert(lhs.data_ == rhs.data_);
+		return lhs.tagged_index_ > rhs.tagged_index_;
+	}
+	
+	friend constexpr bool operator>=(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
+		assert(lhs.data_ == rhs.data_);
+		return lhs.tagged_index_ >= rhs.tagged_index_;
+	}
+};
+
+namespace tags {
+
+struct PreserveBufferLayout {};
+inline constexpr auto preserve_layout = PreserveBufferLayout{};
+
+struct PreserveBufferCapacity {};
+inline constexpr auto preserve_capacity = PreserveBufferCapacity{};
+
+struct Optimized{};
+inline constexpr auto optimized = Optimized{};
+
+struct Front{};
+inline constexpr auto front = Front{};
+
+struct Back{};
+inline constexpr auto back = Back{};
+
+} /* namespace tags */
+
+
+template <class SizeType>
+struct BufferShape
+{
+	SizeType capacity = 0;
+	SizeType start = 0;
+
+	friend constexpr auto operator<=>(const BufferShape& lhs, const BufferShape& rhs) = default;
+};
+
+template <class T, class Allocator>
+struct CircularBuffer: private detail::AllocatorBase<Allocator> {
 private:
 	using alloc_traits = std::allocator_traits<Allocator>;
-	using base_type = AllocatorBase<Allocator>;
+	using base_type = detail::AllocatorBase<Allocator>;
 	using base_type::alloc;
 
 	using ptr_traits = std::pointer_traits<typename alloc_traits::pointer>;
+	struct ReserveTag {};
+	static constexpr ReserveTag reserve_tag = {};
 public:
 	using value_type             = T;
 	using allocator_type         = Allocator;
@@ -871,18 +1317,28 @@ public:
 	using const_reference        = const value_type&;
 	using pointer                = typename alloc_traits::pointer;
 	using const_pointer          = typename alloc_traits::const_pointer;
-	using iterator               = CircularBufferIterator<false, T, Allocator>;
-	using const_iterator         = CircularBufferIterator<true, T, Allocator>;
+	using iterator               = CircularBufferIterator<T, Allocator>;
+	using const_iterator         = ConstCircularBufferIterator<T, Allocator>;
 	using reverse_iterator       = std::reverse_iterator<iterator>;
-	using const_reverse_iterator = std::reverse_iterator<const_iterator>
+	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+	using shape_type             = BufferShape<size_type>;
 
 private:
+	using temporary_buffer_type = std::conditional_t<alloc_traits::is_always_equal::value, CircularBuffer<T, Allocator>, CircularBuffer<T, detail::AllocatorRef<Allocator>>>;
 	struct TrivialRangeGuard {
 		TrivialRangeGuard() = default;
 		TrivialRangeGuard(const TrivialRangeGuard&) = delete;
 		TrivialRangeGuard(TrivialRangeGuard&&) = default;
 		TrivialRangeGuard& operator=(const TrivialRangeGuard&) = delete;
 		TrivialRangeGuard& operator=(TrivialRangeGuard&&) = default;
+
+		constexpr TrivialRangeGuard(Allocator* a, pointer start, pointer stop):
+			alloc(a),
+			start(start),
+			stop(stop)
+		{
+		
+		}
 
 		Allocator* alloc = nullptr;
 		pointer start = nullptr;
@@ -892,7 +1348,7 @@ private:
 	struct NonTrivialRangeGuard {
 		NonTrivialRangeGuard() = default;
 		NonTrivialRangeGuard(const NonTrivialRangeGuard&) = delete;
-		NonTrivialRangeGuard(NonTrivialRangeGuard&& other) noexcept:
+		constexpr NonTrivialRangeGuard(NonTrivialRangeGuard&& other) noexcept:
 			alloc(std::exchange(other.alloc, nullptr)),
 			start(other.start),
 			stop(other.stop)
@@ -900,15 +1356,23 @@ private:
 
 		}
 
-		NonTrivialRangeGuard& operator=(const NonTrivialRangeGuard&) = delete;
-		NonTrivialRangeGuard& operator=(NonTrivialRangeGuard&& other) noexcept {
+		constexpr NonTrivialRangeGuard(Allocator* a, pointer start, pointer stop):
+			alloc(a),
+			start(start),
+			stop(stop)
+		{
+		
+		}
+
+		constexpr NonTrivialRangeGuard& operator=(const NonTrivialRangeGuard&) = delete;
+		constexpr NonTrivialRangeGuard& operator=(NonTrivialRangeGuard&& other) noexcept {
 			NonTrivialRangeGuard tmp(std::move(*this));
 			alloc = std::exchange(other.alloc, nullptr);
 			start = other.start;
 			stop = other.stop;
 		}
 
-		~NonTrivialRangeGuard() {
+		constexpr ~NonTrivialRangeGuard() {
 			if(!alloc) {
 				return;
 			}
@@ -937,28 +1401,13 @@ private:
 		SplitRange& operator=(const SplitRange&) = default;
 		SplitRange& operator=(SplitRange&&) = default;
 
-		constexpr SplitRange(Ptr p, size_type sz, bool tag = false):
+		constexpr SplitRange(Ptr p, size_type sz):
 			begin_(p),
-			tagged_size_(sz)
+			size_(sz)
 		{
-			assert(!get_tag());
-			set_tag(tag);
+			
 		}
-		
-		constexpr bool get_tag() const {
-			constexpr size_type mask = ~((~size_type(0)) >> 1);
-			return (mask & tagged_size_) != 0ul;
-		}
-
-		constexpr void set_tag(bool value) {
-			constexpr size_type mask = (~size_type(0)) >> 1;
-			if(value) {
-				tagged_size_ |= ~mask;
-			} else {
-				tagged_size_ &= mask;
-			}
-		}
-
+	
 		constexpr Ptr begin() const {
 			return begin_;
 		}
@@ -976,14 +1425,17 @@ private:
 		}
 
 		constexpr size_type size() const {
-			constexpr size_type mask = ~((~size_type(0)) >> 1);
-			assert((tagged_size_ & mask) == 0u);
-			return tagged_size_;
+			return size_;
 		}
+
+		constexpr SplitRange<std::move_iterator<Ptr>> as_moving_range() const {
+			return SplitRange<std::move_iterator<Ptr>>(std::make_move_iterator(begin_), size_);
+		}
+
 
 	private:
 		Ptr begin_;
-		size_type tagged_size_;
+		size_type size_;
 	};
 
 	template <class Ptr>
@@ -991,17 +1443,17 @@ private:
 
 		constexpr SplitRanges():
 			ranges_{
-				SplitRange<Ptr>{nullptr, 0u, false},
-				SplitRange<Ptr>{nullptr, 0u, true}
+				SplitRange<Ptr>{Ptr{}, 0u},
+				SplitRange<Ptr>{Ptr{}, 0u}
 			}
 		{
 			
 		}
 
-		constexpr SplitRanges(SplitRange<Ptr> r):
-			ranges_{r, SplitRange<Ptr>{nullptr, 0u, true}}
+		explicit constexpr SplitRanges(SplitRange<Ptr> r):
+			ranges_{ r, SplitRange<Ptr>{Ptr{}, 0u} }
 		{
-			ranges_[1].set_tag(true);
+			
 		}
 
 		constexpr SplitRanges(SplitRange<Ptr> r1, SplitRange<Ptr> r2):
@@ -1012,11 +1464,11 @@ private:
 
 		constexpr SplitRanges(std::pair<Ptr, Ptr> first_range, std::pair<Ptr, Ptr> second_range):
 			ranges_{
-				SplitRange<Ptr>{first_range.first, first_range.second},
-				SplitRange<Ptr>{second_range.first, second_range.second}
+				SplitRange<Ptr>(first_range.first, first_range.second - first_range.first),
+				SplitRange<Ptr>(second_range.first, first_range.second - first_range.first)
 			}
 		{
-			ranges_[1].set_tag(false);
+			
 		}
 
 		constexpr const SplitRange<Ptr>* begin() const {
@@ -1028,49 +1480,95 @@ private:
 		}
 
 		constexpr const SplitRange<Ptr>* end() const {
-			return ranges_[1].get_tag() ? &ranges_[1] : &ranges_[1] + 1u;
+			return begin() + size();
 		}
 
 		constexpr SplitRange<Ptr>* end() {
-			return ranges_[1].get_tag() ? &ranges_[1] : &ranges_[1] + 1u;
+			return begin() + size();
 		}
 
-		constexpr std::reverse_iterator<SplitRange<Ptr>*> rbegin() const {
+		constexpr std::reverse_iterator<const SplitRange<Ptr>*> rbegin() const {
 			return std::make_reverse_iterator(end());
 		}
 
-		constexpr std::reverse_iterator<SplitRange<Ptr>*> rend() const {
+		constexpr std::reverse_iterator<SplitRange<Ptr>*> rbegin() {
+			return std::make_reverse_iterator(end());
+		}
+
+		constexpr std::reverse_iterator<const SplitRange<Ptr>*> rend() const {
+			return std::make_reverse_iterator(begin());
+		}
+
+		constexpr std::reverse_iterator<SplitRange<Ptr>*> rend() {
 			return std::make_reverse_iterator(begin());
 		}
 
 		constexpr size_type size() const {
-			return ranges_[1].get_tag() ? 1u : 2u;
+			assert(ranges_[0].size() == 0 ? ranges_[1].size() == 0 : true);
+			return size_type(ranges_[0].size() != 0) + size_type(ranges_[1].size() != 0);
 		}
 
 		constexpr size_type total() const {
-			return ranges_[0].size() + (ranges_[1].get_tag() ? ranges_[1].size() : 0ul);
+			return ranges_[0].size() + ranges_[1].size();
 		}
 
 		constexpr SplitRanges first(size_type count) const {
 			if(ranges_[0].size() >= count) {
-				return SplitRanges(SplitRange<Ptr>(this->begin()->begin(), count, false));
+				return SplitRanges(SplitRange<Ptr>(ranges_[0].begin(), count));
 			}
 			return SplitRanges(
 				ranges_[0],
-				SplitRange<Ptr>(ranges_[1]->begin(), count - ranges_[0].size(), false)
+				SplitRange<Ptr>(ranges_[1].begin(), count - ranges_[0].size())
 			);
 		}
 
 		constexpr SplitRanges last(size_type count) const {
 			if(ranges_.size() == 1u) {
-				return SplitRanges(SplitRange<Ptr>(this->begin()->end() - count, count, false));
+				return SplitRanges(SplitRange<Ptr>(ranges_[0].end() - count, count));
 			}
 			if(ranges_[1].size() >= count) {
-				return SplitRanges(SplitRange<Ptr>(this->begin()[1].end() - count, count, false));
+				return SplitRanges(SplitRange<Ptr>(ranges_[1].end() - count, count));
 			}
 			return SplitRanges(
-				SplitRange<Ptr>(ranges_[0]->end() - (count - ranges_[1].size()), count - ranges_[1].size(), false)
+				SplitRange<Ptr>(ranges_[0].end() - (count - ranges_[1].size()), count - ranges_[1].size()),
 				ranges_[1]
+			);
+		}
+
+		constexpr const SplitRange<Ptr>& front() const {
+			assert(size() != 0);
+			return ranges_[0];
+		}
+
+		constexpr SplitRange<Ptr>& front() {
+			assert(size() != 0);
+			return ranges_[0];
+		}
+
+		constexpr const SplitRange<Ptr>& back() const {
+			assert(size() == 2);
+			return ranges_[1];
+		}
+
+		constexpr SplitRange<Ptr>& back() {
+			assert(size() == 2);
+			return ranges_[1];
+		}
+
+		constexpr bool empty() const {
+			return ranges_[0].size() == 0u;
+		}
+
+		constexpr SplitRanges<std::move_iterator<Ptr>> as_moving_ranges() const {
+			return SplitRanges<std::move_iterator<Ptr>>(
+				SplitRange<std::move_iterator<Ptr>>(
+					std::make_move_iterator(ranges_[0].begin()),
+					ranges_[0].size()
+				),
+				SplitRange<std::move_iterator<Ptr>>(
+					std::make_move_iterator(ranges_[1].begin()),
+					ranges_[1].size()
+				)
 			);
 		}
 
@@ -1078,11 +1576,10 @@ private:
 		std::array<SplitRange<Ptr>, 2> ranges_;
 	};
 
-
 	struct CircularBufferDeleter {
 		using pointer = typename CircularBuffer::pointer;
 
-		constexpr AllocatorDeleter(CircularBuffer* buff, size_type n):
+		constexpr CircularBufferDeleter(CircularBuffer* buff, size_type n):
 			buffer(buff),
 			count(n)
 		{
@@ -1174,10 +1671,6 @@ private:
 		alloc_traits::destroy(this->alloc(), p);
 	}
 
-	constexpr size_type max_size() const {
-		return alloc_traits::max_size(this->alloc());
-	}
-
 	constexpr Allocator select_on_container_copy_construction() const {
 		return alloc_traits::select_on_container_copy_construction(this->alloc());
 	}
@@ -1191,11 +1684,518 @@ private:
 	static constexpr bool propagate_on_container_swap
 		= alloc_traits::propagate_on_container_swap::value;
 
-	static constexpr bool is_always_equal = alloc_traits::is_always_equal;
+	static constexpr bool is_always_equal = alloc_traits::is_always_equal::value;
+
+
+	constexpr void initialize_allocation(size_type count)
+	{
+		data_ = this->allocate(count);
+		cap_ = count;
+	}
+
+	
+	template <class Ranges>
+	constexpr void initialize_split_buffer_fast(const Ranges& ranges)
+	{
+		assert(size() == 0);
+		const auto ranges_count = ranges.size();
+		if(ranges_count == 0)
+		{
+			return;
+		}
+		assert(ranges.total() <= capacity());
+		auto dest_pos = data_ + start_;
+		const auto wrap_pos = data_ + capacity();
+
+		for(auto&& item: ranges[0])
+		{
+			assert(dest_pos != wrap_pos);
+			construct(dest_pos++, std::forward<decltype(item)>(item));
+			++size_;
+		}
+		if(ranges_count == 1)
+		{
+			return;
+		}
+		assert(dest_pos == wrap_pos);
+		dest_pos = data_;
+		const auto start_pos = data_ + start_;
+		for(auto&& item: ranges[1])
+		{
+			assert(dest_pos != start_pos);
+			construct(dest_pos++, std::forward<decltype(item)>(item));
+			++size_;
+		}
+	}
+
+	template <class Ranges>
+	constexpr void initialize_continuous_buffer_fast(const Ranges& ranges)
+	{
+		assert(size() == 0);
+		assert(ranges.total() <= capacity());
+		auto dest_pos = data_ + start_;
+		const auto wrap_pos = data_ + capacity();
+
+		for(const auto& range: ranges)
+		{
+			for(auto&& item: range)
+			{
+				assert(dest_pos != wrap_pos);
+				construct(dest_pos++, std::forward<decltype(item)>(item));
+				++size_;
+			}
+		}
+	}
+
+	template <
+		class TagType,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				TagType,
+				tags::PreserveBufferLayout,
+				tags::PreserveBufferCapacity,
+				tags::Optimized
+			>
+		> = true
+	>
+	static constexpr CircularBuffer do_tagged_move_construction(TagType tag, CircularBuffer&& other, const Allocator& alloc)
+	{
+		if(is_always_equal || alloc == other.alloc())
+		{
+			CircularBuffer buf(std::move(other));
+			buf.alloc() = alloc;
+			return buf;
+		}
+		else
+		{
+			size_type cap = 0;
+			size_type start = 0;
+			if constexpr(std::is_same_v<tags::PreserveBufferLayout, TagType>)
+			{
+				cap = other.capacity();
+				start = other.begin_index();
+			}
+			else if constexpr(std::is_same_v<tags::PreserveBufferCapacity, TagType>)
+			{
+				cap = other.capacity();
+			}
+			else
+			{
+				cap = other.size();
+			}
+			CircularBuffer buf(alloc);
+			buf.initialize_allocation(cap);
+			if(start == 0)
+			{
+				buf.initialize_continuous_buffer_fast(other.get_ranges());
+			}
+			else
+			{
+				for(auto r: as_moving_split_ranges(other.begin(), other.end()))
+				{
+					buf.appdend_fast(r.begin(), r.end());
+				}
+			}
+			return buf;
+		}
+	}
+
+	
+	constexpr CircularBuffer(ReserveTag, size_type cap, const Allocator& alloc=Allocator()):
+		base_type(alloc)
+	{
+		reserve_fast(cap);
+	}
 
 public:
+	constexpr ~CircularBuffer()
+	{
+		if(!data_)
+		{
+			assert(cap_ == 0);
+			assert(size_ == 0);
+			assert(start_ == 0);
+			return;
+		}
+		assert(cap_ != 0);
+		assert(cap_ >= size_);
+		assert(start_ < cap_);
+		auto ranges = get_ranges();
+		for(auto range: ranges)
+		{
+			for(auto pos = range.begin(); pos != range.end(); ++pos)
+			{
+				destroy(pos);
+			}
+		}
+	}
+	/* Constructors */
+	constexpr CircularBuffer() = default;
+	
+	constexpr CircularBuffer(const Allocator& alloc) noexcept(std::is_nothrow_copy_constructible_v<Allocator>):
+		base_type(alloc)
+	{
+
+	}
+
+	template <
+		class TagType,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				TagType,
+				tags::PreserveBufferLayout,
+				tags::PreserveBufferCapacity,
+				tags::Optimized
+			>
+				
+		> = true
+	>
+	constexpr CircularBuffer(TagType tag, const CircularBuffer& other, const Allocator& al):
+		CircularBuffer(al)
+	{
+		(void)tag;
+		size_type new_cap = 0;
+		if constexpr(std::is_same_v<TagType, tags::optimized>)
+		{
+			new_cap = other.size();
+			start_ = 0;
+		}
+		else if constexpr(std::is_same_v<TagType, tags::preserve_capacity>)
+		{
+			new_cap = other.capacity();
+			start_ = 0;
+		}
+		else 
+		{
+			// tag == tags::preserve_layout
+			new_cap = other.capacity();
+			start_ = other.start_;
+		}
+		constexpr bool could_wrap = std::is_same_v<TagType, tags::preserve_layout>;
+		data_ = allocate(new_cap);
+		auto dest_pos = data_ + start_;
+		for(auto range: other.get_ranges())
+		{
+			for(const auto& item: range)
+			{
+				construct(dest_pos++, item);
+				++size_;
+			}
+			if constexpr(could_wrap)
+			{
+				// if other's data wraps around and we're preserving the layout, then we need to wrap our storage around as well for the second range.
+				assert(other.storage_is_split() ? dest_pos == (data_ + capacity()) : true);
+				dest_pos = data_;
+			}
+		}
+	}
+
+	template <
+		class TagType,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				TagType,
+				tags::PreserveBufferLayout,
+				tags::PreserveBufferCapacity,
+				tags::Optimized
+			>
+		> = true
+	>
+	constexpr CircularBuffer(TagType tag, const CircularBuffer& other):
+		CircularBuffer(tag, other, other.select_on_container_copy_construction())
+	{
+		
+	}
+	constexpr CircularBuffer(const CircularBuffer& other, const Allocator& al):
+		CircularBuffer(other, tags::optimized, al)
+	{
+		
+	}
+
+	constexpr CircularBuffer(shape_type shape, const CircularBuffer& other, const Allocator& al):
+		CircularBuffer(al)
+	{
+		assert(shape.capacity >= other.size());
+		assert(shape.start < shape.capacity);
+		data_ = allocate(shape.capacity);
+		start_ = shape.start;
+		for(auto r: other.get_ranges())
+		{
+			append_fast(r.begin(), r.end());
+		}
+	}
+
+	constexpr CircularBuffer(shape_type shape, const CircularBuffer& other):
+		CircularBuffer(shape, other, other.select_on_container_copy_construction())
+	{
+
+	}
+
+	constexpr CircularBuffer(CircularBuffer&& other) noexcept:
+		base_type(std::move(other.alloc())),
+		data_(std::exchange(other.data_, nullptr)),
+		cap_(std::exchange(other.cap_, 0)),
+		size_(std::exchange(other.size_, 0)),
+		start_(std::exchange(other.start_, 0))
+	{
+
+	}
+
+	template <
+		class TagType,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				TagType,
+				tags::PreserveBufferLayout,
+				tags::PreserveBufferCapacity,
+				tags::Optimized
+			>
+				
+		> = true
+	>
+	constexpr CircularBuffer(TagType tag, CircularBuffer&& other):
+		CircularBuffer(std::move(other))
+	{
+		
+	}
+
+	template <
+		class TagType,
+		std::enable_if_t<
+			detail::is_one_of_v<
+				TagType,
+				tags::PreserveBufferLayout,
+				tags::PreserveBufferCapacity,
+				tags::Optimized
+			>
+				
+		> = true
+	>
+	constexpr CircularBuffer(TagType tag, CircularBuffer&& other, const Allocator& alloc):
+		CircularBuffer(do_tagged_move_construction(tag, std::move(other), alloc))
+	{
+		
+	}
 
 
+
+	constexpr CircularBuffer(CircularBuffer&& other, const Allocator& alloc) noexcept:
+		CircularBuffer(do_tagged_move_construction(tags::optimized, std::move(other), alloc))
+	{
+
+	}
+
+
+	constexpr CircularBuffer(shape_type shape, CircularBuffer&& other, const Allocator& al):
+		CircularBuffer(al)
+	{
+		assert(shape.capacity >= other.size());
+		assert(shape.start < shape.capacity);
+		data_ = allocate(shape.capacity);
+		start_ = shape.start;
+		for(auto r: other.get_ranges())
+		{
+			append_fast(std::make_move_iterator(r.begin()), std::make_move_iterator(r.end()));
+		}
+	}
+
+	constexpr CircularBuffer(shape_type shape, CircularBuffer&& other):
+		CircularBuffer(shape == other.buffer_shape() ? std::move(other) : CircularBuffer(shape, std::move(other), other.alloc()))
+	{
+
+	}
+
+	constexpr CircularBuffer(std::initializer_list<T> init, const Allocator& alloc = Allocator()):
+		CircularBuffer(init.begin(), init.end(), alloc)
+	{
+
+	}
+	
+	constexpr CircularBuffer(shape_type shape, std::initializer_list<T> init, const Allocator& alloc = Allocator()):
+		CircularBuffer(shape, init.begin(), init.end(), alloc)
+	{
+
+	}
+
+	
+		
+	constexpr CircularBuffer(shape_type shape, const Allocator& alloc) noexcept(std::is_nothrow_copy_constructible_v<Allocator>):
+		base_type(alloc)
+	{
+		assert(shape.start < shape.capacity);
+		initialize_allocation(shape.capacity);
+		start_ = shape.start;
+	}
+
+	explicit CircularBuffer(size_type count, const value_type& value, const Allocator& alloc = Allocator()):
+		CircularBuffer(alloc)
+	{
+		initialize_allocation(count);
+		auto stop = data_ + count;
+		for(auto p = data_; p != stop; ++p)
+		{
+			this->contstruct(p, value);
+			++size_;
+		}
+	}
+		
+	explicit constexpr CircularBuffer(size_type count, const Allocator& alloc = Allocator()):
+		CircularBuffer(alloc)
+	{
+		initialize_allocation(count);
+		auto stop = data_ + count;
+		for(auto p = data_; p != stop; ++p)
+		{
+			this->contstruct(p);
+			++size_;
+		}
+	}
+	
+	template <
+		class It,
+		std::enable_if_t<
+			std::is_convertible_v<
+				typename std::iterator_traits<It>::iterator_category, 
+				std::forward_iterator_tag
+			>,
+			bool
+		> = true 
+	>
+	constexpr CircularBuffer(It first, It last, const Allocator& alloc = Allocator()):
+		CircularBuffer(alloc)
+	{
+		size_type count = std::distance(first, last);
+		assign_empty(first, last, count);
+	}
+
+	template <
+		class It,
+		std::enable_if_t<
+			std::is_convertible_v<
+				typename std::iterator_traits<It>::iterator_category, 
+				std::forward_iterator_tag
+			>,
+			bool
+		> = true 
+	>
+	constexpr CircularBuffer(shape_type shape, It first, It last, const Allocator& alloc = Allocator()):
+		CircularBuffer(shape, alloc)
+	{
+		size_type count = std::distance(first, last);
+		assert(capacity >= count);
+		assign_empty(first, last, count);
+	}
+
+	constexpr CircularBuffer(const CircularBuffer& other):
+		CircularBuffer(other, other.select_on_container_copy_construction())
+	{
+
+	}
+
+
+	constexpr CircularBuffer& operator=(const CircularBuffer& other)
+	{
+		if (propagate_on_container_copy_assignment && !is_always_equal && alloc() != other.alloc())
+		{
+			clear_fast();
+			deallocate(data_, capacity());
+			cap_ = 0;
+			CircularBuffer tmp(other, other.alloc());
+			alloc() = tmp.alloc();
+			data_ = std::exchange(tmp.data_, nullptr);
+			cap_ = std::exchange(tmp.cap_, 0);
+			size_ = std::exchange(tmp.size_, 0);
+			start_ = std::exchange(tmp.start_, 0);
+			return;
+		}
+		clear_fast();
+		if(capacity() < other.size())
+		{
+			if(data_) {
+				deallocate(data_, capacity());
+				data_ = nullptr;
+				cap_ = 0;
+				start_ = 0;
+			}
+			data_ = allocate(other.size());
+			cap_ = other.size();
+		}
+		else
+		{
+			start_ = 0;
+		}
+		initialize_continuous_buffer_fast(other.get_ranges());
+		return *this;
+	}
+
+	constexpr CircularBuffer& operator=(std::initializer_list<T> init)
+	{
+		assign(init);
+		return *this;
+	}
+
+	constexpr CircularBuffer& operator=(CircularBuffer&& other) noexcept(propagate_on_container_move_assignment || is_always_equal)
+	{
+		if (propagate_on_container_move_assignment || is_always_equal || alloc() == other.alloc())
+		{
+			CircularBuffer tmp(std::move(*this));
+			if constexpr (propagate_on_container_move_assignment)
+			{
+				alloc() = other.alloc();
+			}
+			data_ = std::exchange(other.data_, nullptr);
+			cap_ = std::exchange(other.cap_, 0);
+			size_ = std::exchange(other.size_, 0);
+			start_ = std::exchange(other.start_, 0);
+		}
+		else
+		{
+			deallocate(data_, capacity());
+			data_ = nullptr;
+			cap_ = 0;
+			auto new_cap = other.size();
+			data_ = allocate(new_cap);
+			cap_ = new_cap;
+			start_ = 0;
+			for (auto r : other.get_ranges())
+			{
+				append_no_split(std::make_move_iterator(r.begin()), std::make_move_iterator(r.end()));
+			}
+		}
+	}
+
+
+
+	/* Assignment */
+	constexpr void assign(size_type count, const T& value)
+	{
+		clear_fast();
+		assign_empty(count, value);
+	}
+
+	template <
+		class It,
+		std::enable_if_t<
+			std::is_convertible_v<
+				typename std::iterator_traits<It>::iterator_category, 
+				std::input_iterator_tag
+			>,
+			bool
+		> = false
+	>
+	constexpr void assign(It first, It last) {
+		clear_fast();
+		assign_empty(first, last);
+	}
+
+	constexpr void assign(std::initializer_list<T> ilist) {
+		assign(ilist.begin(), ilist.end());
+	}
+
+	/* Allocator */
+	constexpr allocator_type get_allocator() const noexcept { return alloc(); }
+
+	/* Iterators */
 	constexpr iterator begin() {
 		return iterator(data_, cap_, start_, false);
 	}
@@ -1255,17 +2255,18 @@ public:
 		return std::make_reverse_iterator(begin());
 	}
 
-	constexpr const_reverse_iterator crbegin() const {
+	constexpr const_reverse_iterator crend() const {
 		return std::make_reverse_iterator(begin());
 	}
 
+	/* Accessors */
 
 	constexpr reference operator[](size_type index) {
-		return cbegin()[index];
+		return begin()[index];
 	}
 
 	constexpr const_reference operator[](size_type index) const {
-		return begin()[index];
+		return cbegin()[index];
 	}
 
 
@@ -1276,7 +2277,7 @@ public:
 		return begin()[index];
 	}
 
-	constexpr const_reference operator[](size_type index) const {
+	constexpr const_reference at(size_type index) const {
 		if(index > size()) {
 			throw std::out_of_range("tim::CircularBuffer::at()");
 		}
@@ -1314,6 +2315,8 @@ public:
 		return end().get_index();
 	}
 
+	
+
 	/**
 	 * @brief
 	 * Increase the capacity of the buffer to a value that's greater or equal to new_cap.
@@ -1339,6 +2342,26 @@ public:
 		this->reserve_slow(new_cap, this->start_);
 	}
 
+
+	constexpr void shrink_to_fit()
+	{
+		if (size() == capacity())
+		{
+			return;
+		}
+		auto tmp = make_temporary_buffer(size());
+		auto pos = tmp.data_;
+		for (auto r : get_ranges())
+		{
+			for (T& value : r)
+			{
+				tmp.construct(pos++, std::move(value));
+				++tmp.size_;
+			}
+		}
+		commit(tmp);
+	}
+
 	/**
 	 * @brief
 	 * Inserts elements from range [first, last) before pos.
@@ -1362,12 +2385,11 @@ public:
 			bool
 		> = false
 	>
-	constexpr void insert_back(const_iterator pos, It first, It last) {
+	constexpr iterator insert_move_back(const_iterator pos, It first, It last) {
 		if(first == last) {
-			return;
+			return as_non_const_iterator(pos);
 		}
-		size_type count = std::distance(first, last);
-		size_type index = pos - cbegin();
+		const size_type index = pos - cbegin();
 		auto initial_size = size();
 		while(size() < capacity() && first != last) {
 			emplace_back(*first++);
@@ -1375,10 +2397,9 @@ public:
 		size_type count_inserted = size() - initial_size();
 		if(first == last) {
 			std::rotate(as_mutable_iterator(pos), end() - count_inserted, end);
-			return;	
+			return begin() + index;
 		}
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(grow_size(this->capacity()));
+		auto tmp = make_temporary_buffer(grow_size(this->capacity()));
 		// Write directly to the final destination position.
 		tmp.start_ = detail::add_modulo(tmp.capacity(), this->start_, pos - cbegin(), count_inserted);
 		for(;;) {
@@ -1413,6 +2434,7 @@ public:
 			);
 		}
 		this->commit(tmp);
+		return begin() + index;
 	}
 
 	/**
@@ -1432,24 +2454,76 @@ public:
 	template <
 		class It,
 		std::enable_if_t<
-			detail::is_one_of_v<
+			std::is_convertible_v<
 				typename std::iterator_traits<It>::iterator_category, 
-				std::forward_iterator_tag,
-				std::bidirectional_iterator_tag,
-				std::random_access_iterator_tag
+				std::forward_iterator_tag
 			>,
 			bool
 		> = false
 	>
-	constexpr void insert_back(const_iterator pos, It first, It last) {
+	constexpr iterator insert_move_back(const_iterator pos, It first, It last) {
 		size_type count = std::distance(first, last);
 		size_type index = pos - cbegin();
 		if(count <= this->capacity() - this->size()) {
-			this->insert_back_fast(pos, first, last, count);
+			return this->insert_move_back_fast(pos, first, last, count);
 		} else {
-			this->insert_back_slow(pos, first, last, count);
+			return this->insert_move_back_slow(pos, first, last, count);
 		}
 	}
+
+	/**
+	 * @brief
+	 * Inserts the given element before pos.
+	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
+	 *
+	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator.
+	 * The behavior is undefined if first and last are iterators into *this.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	template <class It, class U, std::enable_if_t<std::is_same_v<T, std::remove_cvref_t<U>>, bool> = true>
+	constexpr iterator insert_move_back(const_iterator pos, U&& value) {
+		auto idx = pos - begin();
+		emplace_move_back(pos, std::forward<U>(value));
+		return begin() + idx;
+	}
+
+	/**
+	 * @brief
+	 * Inserts 'count' copies of the given element before pos.
+	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	constexpr iterator insert_move_back(const_iterator pos, size_type count, const T& value) {
+		auto range = detail::make_single_value_range(value, count);
+		return insert_move_back(pos, range.begin(), range.end());
+	}
+
+	/**
+	 * @brief
+	 * Inserts the elements from the initialize list before pos.
+	 ** Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	constexpr iterator insert_move_back(const_iterator pos, std::initializer_list<T> ilist) {
+		return insert_move_back(pos, ilist.begin(), ilist.end());
+	}
+
+
 
 	/**
 	 * @brief
@@ -1475,12 +2549,11 @@ public:
 			bool
 		> = false
 	>
-	constexpr void insert_front(const_iterator pos, It first, It last) {
+	constexpr iterator insert_move_front(const_iterator pos, It first, It last) {
 		if(first == last) {
-			return;
+			return as_non_const_iterator(pos);
 		}
-		size_type count = std::distance(first, last);
-		size_type index = pos - cbegin();
+		const size_type index = pos - cbegin();
 		auto initial_size = size();
 		while(size() < capacity() && first != last) {
 			emplace_front(*first++);
@@ -1489,10 +2562,9 @@ public:
 		if(first == last) {
 			std::reverse(begin() + initial_size, end());
 			std::rotate(as_mutable_iterator(pos), end() - count_inserted, end);
-			return;	
+			return begin() + index;
 		}
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(grow_size(this->capacity()));
+		auto tmp = make_temporary_buffer(grow_size(this->capacity()));
 		// Write directly to the final destination position.
 		if(this->start_ < count_inserted) {
 			tmp.start_ = tmp.capacity() - (count_inserted - this->start_);
@@ -1522,7 +2594,11 @@ public:
 			);
 		}
 		this->commit(tmp);
+		return begin() + index;
 	}
+
+
+
 
 	/**
 	 * @brief
@@ -1541,31 +2617,78 @@ public:
 	template <
 		class It,
 		std::enable_if_t<
-			detail::is_one_of_v<
+			std::is_convertible_v<
 				typename std::iterator_traits<It>::iterator_category, 
-				std::forward_iterator_tag,
-				std::bidirectional_iterator_tag,
-				std::random_access_iterator_tag
+				std::forward_iterator_tag
 			>,
 			bool
 		> = false
 	>
-	constexpr void insert_front(const_iterator pos, It first, It last) {
+	constexpr iterator insert_move_front(const_iterator pos, It first, It last) {
 		size_type count = std::distance(first, last);
 		size_type index = pos - cbegin();
-		if(count <= this->capacity() - this->size()) {
-			this->insert_front_fast(pos, first, last, count);
+		if(count <= capacity() - size()) {
+			return insert_move_front_fast(pos, first, last, count);
 		} else {
-			this->insert_front_slow(pos, first, last, count);
+			return insert_move_front_slow(pos, first, last, count);
 		}
+	}
+
+	/**
+	 * @brief
+	 * Inserts the given element before pos.
+	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted ivalue.
+	 * Note that this means the value of begin_index() will change accordingly.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	template <class It, class U, std::enable_if_t<std::is_same_v<T, std::remove_cvref_t<U>>, bool> = true>
+	constexpr iterator insert_move_front(const_iterator pos, U&& value) {
+		auto idx = pos - begin();
+		emplace_move_front(pos, std::forward<U>(value));
+		return begin() + idx;
+	}
+
+	/**
+	 * @brief
+	 * Inserts 'count' copies of the given element before pos.
+	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of begin_index() will change accordingly.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	constexpr iterator insert_move_front(const_iterator pos, size_type count, const T& value) {
+		auto range = detail::make_single_value_range(value, count);
+		return insert_move_front(pos, range.begin(), range.end());
+	}
+
+	/**
+	 * @brief
+	 * Inserts the elements from the initialize list before pos.
+	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 * Note that this means the value of begin_index() will change accordingly.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	constexpr iterator insert_move_front(const_iterator pos, std::initializer_list<T> ilist) {
+		return insert_move_front(pos, ilist.begin(), ilist.end());
 	}
 
 	/**
 	 * @brief
 	 * Inserts elements from range [first, last) before pos.
 	 * If the number of elements before pos is less than the number of elements after pos, then 
-	 * the new values are inserted as if by calling insert_front(), otherwise they are inserted
-	 * as if by insert_back().
+	 * the new values are inserted as if by calling insert_move_front(), otherwise they are inserted
+	 * as if by insert_move_back().
 	 *
 	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator.
 	 * The behavior is undefined if first and last are iterators into *this.
@@ -1576,114 +2699,339 @@ public:
 	 *
 	 */
 	template <class It>
-	constexpr void insert(const_iterator pos, It first, It last) {
+	constexpr iterator insert(const_iterator pos, It first, It last) {
 		// Insert in which ever way involves the least data movement.
 		size_type count_before = pos - begin();
 		size_type count_after = size() - count_before;
 		if(count_before < count_after) {
-			this->insert_front(pos, first, last);
+			return insert_move_front(pos, first, last);
 		} else {
-			this->insert_back(pos, first, last);
+			return insert_move_back(pos, first, last);
 		}
 	}
 
 	/**
 	 * @brief
-	 * Increase the capacity of the buffer to a value that's greater or equal to new_cap, and set 
-	 * the buffer's begin_index() to new_begin.
-	 * If new_cap is greater than the current capacity(), new storage is allocated, otherwise the method's only
-	 * effect is to change the value of begin_index().
-	 * reserve() does not change the size of the buffer.
-	 * If new_cap is greater than capacity(), all iterators, including the past-the-end iterator, and all references to the elements are invalidated.
-	 * Otherwise, no iterators or references are invalidated.
+	 * Inserts the given element before pos.
+	 * If the number of elements before pos is less than the number of elements after pos, then 
+	 * the new value is inserted as if by calling insert_move_front(), otherwise they are inserted
+	 * as if by insert_move_back().
 	 *
-	 * @param new_cap   New capacity of the buffer.
-	 * @param new_begin New value of begin_index() for the buffer.  Must be in the range [0, new_cap).
-	 * 
-	 * @note
-	 * Calls to this overload do not preserve the value of begin_index(). The new value
-	 * of begin_index() is determined .  See reserve_front() and reserve(size_type) for
-	 * alternatives.
+	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator.
+	 * The behavior is undefined if first and last are iterators into *this.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
 	 */
-	constexpr void reserve(size_type new_cap, size_type new_begin) {
-		if(new_cap > max_size()) {
-			throw std::length_error("CircularBuffer::reserve()");
-		}
-		if(this->capacity() >= new_cap) {
-			if(start_ == new_start) {
-				return;
-			}
-			
-		}
-		this->reserve_slow(new_cap, new_start);
+	template <class U, std::enable_if_t<std::is_same_v<T, std::remove_cvref_t<U>>, bool> = true>
+	constexpr iterator insert(const_iterator pos, U&& value) {
+		auto idx = pos - begin();
+		return emplace(pos, std::forward<U>(value));
 	}
 
-	template <class ... Args>
-	constexpr void emplace_back(Args&& ... args) {
-		if(size() < capacity()) {
-			emplace_back_fast(std::forward<Args>(args)...);
-			return;
+
+
+
+	/* Emplacement */
+
+	/**
+	 * @brief
+	 * Inserts 'count' copies of the given element before pos.
+	 * If the number of elements before pos is less than the number of elements after pos, then 
+	 * the new values are inserted as if by calling insert_move_front(), otherwise they are inserted
+	 * as if by insert_move_back().
+	 *
+	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator.
+	 * The behavior is undefined if first and last are iterators into *this.
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	constexpr iterator insert(const_iterator pos, size_type count, const T& value) {
+		auto range = detail::make_single_value_range(value, count);
+		return insert(pos, range.begin(), range.end());
+	}
+
+	/**
+	 * @brief
+	 * Emplaces the given element before pos.
+	 * If the number of elements before pos is less than the number of elements after pos, then 
+	 * the new value is emplaced as if by calling emplace_move_front(), otherwise they are inserted
+	 * as if by emplace_move_back().
+	 *
+	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param first Iterator to the first value in the range of elements to be inserted.
+	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 *
+	 */
+	template <class ... Args, std::enable_if_t<std::is_constructible_v<T, Args&&...>, bool> = false>
+	constexpr iterator emplace(const_iterator pos, Args&& ... args) {
+		size_type count_before = pos - begin();
+		size_type count_after = size() - count_before;
+		if(count_before < count_after)
+		{
+			return emplace_move_front(pos, std::forward<Args>(args)...);
 		}
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(grow_size(this->capacity()));
+		else
+		{
+			return emplace_move_back(pos, std::forward<Args>(args)...);
+		}
+	}
+
+
+	template <class ... Args, std::enable_if_t<std::is_constructible_v<T, Args&&...>, bool> = false>
+	constexpr iterator emplace_move_back(const_iterator pos, Args&& ... args) {
+		if (pos == end())
+		{
+			emplace_back(std::forward<Args>(args)...);
+			return end();
+		}
+		return insert_move_back(pos, T(std::forward<Args>(args)...));
+	}
+
+	template <class ... Args, std::enable_if_t<std::is_constructible_v<T, Args&&...>, bool> = false>
+	constexpr reference emplace_back(Args&& ... args) {
+		if(size() < capacity()) {
+			return emplace_back_fast(std::forward<Args>(args)...);
+		}
+		auto tmp = make_temporary_buffer(grow_size(this->capacity()));
 		tmp.start_ = this->start_;
 		auto pos = tmp.begin() + this->size();
-		this->construct(pos.get_raw_pointer(), std::forward<Args>(args)...);
+		tmp.construct(pos.get_raw_pointer(), std::forward<Args>(args)...);
 		{
-			auto guard_ = make_manual_scope_guard([this, &pos](){
-				this->destroy(pos.get_raw_pointer());
+			auto guard_ = detail::make_manual_scope_guard([&tmp, &pos](){
+				tmp.destroy(pos.get_raw_pointer());
 			});
-			tmp.assign(
-				try_make_move_iterator(this->begin()),
-				try_make_move_iterator(this->end())
-			);
-			gaurd_.active = false;
+			for (const auto& r : as_moving_split_ranges(begin(), end()))
+			{
+				append_no_split(r.begin(), r.end());
+			}
+			guard_.active = false;
 		}
-		tmp.start_ = pos.get_index();
+		++tmp.size_;
 		this->commit(tmp);
+		return back();
 	}
 
-	template <class ... Args>
-	constexpr void emplace_front(Args&& ... args) {
+	template <class ... Args, std::enable_if_t<std::is_constructible_v<T, Args&&...>, bool> = false>
+	constexpr iterator emplace_move_front(const_iterator pos, Args&& ... args) {
+		if (pos == begin())
+		{
+			emplace_front(std::forward<Args>(args)...);
+			return end();
+		}
+		return insert_move_front(pos, T(std::forward<Args>(args)...));
+	}
+
+
+	template <class ... Args, std::enable_if_t<std::is_constructible_v<T, Args&&...>, bool> = false>
+	constexpr reference emplace_front(Args&& ... args) {
 		if(size() < capacity()) {
 			emplace_front_fast(std::forward<Args>(args)...);
 			return;
 		}
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(grow_size(this->capacity()));
-		tmp.start_ = this->start_;
-		auto pos = tmp.begin() - 1;
-		this->construct(pos.get_raw_pointer(), std::forward<Args>(args)...);
-		{
-			auto guard_ = detail::make_manual_scope_guard([this, &pos](){
-				this->destroy(pos.get_raw_pointer());
-			});
-			tmp.assign(
-				try_make_move_iterator(this->begin()),
-				try_make_move_iterator(this->end())
-			);
-			gaurd_.active = false;
-		}
-		tmp.start_ = pos.get_index();
-		this->commit(tmp);
+		auto tmp = make_temporary_buffer(grow_size(this->capacity()));
+		tmp.construct(tmp.data_, std::forward<Args>(args)...);
+		tmp.size_ = 1;
+		tmp.append_no_split(
+			try_make_move_iterator(begin()),
+			try_make_move_iterator(end())
+		);
+		commit(tmp);
+		return front();
 	}
 
-	template <
-		class It,
-		std::enable_if_t<
-			detail::is_one_of_v<
-				typename std::iterator_traits<It>::iterator_category, 
-				std::input_iterator_tag,
-				std::forward_iterator_tag,
-				std::bidirectional_iterator_tag,
-				std::random_access_iterator_tag
-			>,
-			bool
-		> = false
-	>
-	constexpr void assign(It first, It last) {
-		this->clear();
-		this->append(first, last);
+	/* erasure operations */
+
+	constexpr iterator erase(const_iterator pos)
+	{
+		assert(pos != end());
+		size_type count_before = pos - begin();
+		size_type count_after = (size() - count_before) - 1;
+		if(count_before < count_after)
+		{
+			return erase_move_front(pos);
+		}
+		else
+		{
+			return erase_move_back(pos);
+		}
+	}
+	
+	constexpr iterator erase_move_back(const_iterator pos)
+	{
+		auto p = as_non_const_iterator(pos);
+		auto ranges = as_split_ranges(p, end());
+		assert(ranges.size() <= 2);
+		assert(ranges.size() != 0);
+		std::move(std::next(ranges[0].begin()), ranges[0].end(), ranges[0].begin());
+		if (ranges.size() == 1)
+		{
+			--size_;
+			destroy(ranges[0].end() - 1);
+			return p;
+		}
+		assert(ranges.size() == 2);
+		assert(ranges[1].size() != 0);
+		ranges[0].end()[-1] = std::move(*ranges[1].begin());
+		std::move(std::next(ranges[1].begin()), ranges[1].end(), ranges[1].begin());
+		--size_;
+		destroy(ranges[1].end() - 1);
+		return p;
+	}
+
+	constexpr iterator erase_move_front(const_iterator pos)
+	{
+		auto p = as_non_const_iterator(pos);
+		auto ranges = as_split_ranges(begin(), std::next(p));
+		assert(ranges.size() <= 2);
+		assert(ranges.size() != 0);
+		switch (ranges.size())
+		{
+		case 2:
+			assert(ranges[1].size() != 0);
+			assert(ranges[0].size() != 0);
+			std::move_backward(ranges[1].begin(), ranges[1].end()-1, ranges[1].end());
+			*ranges[1].begin() = std::move(ranges[0].end()[-1]);
+			[[fallthrough]]
+		case 1:
+			std::move_backward(ranges[0].begin(), ranges[0].end()-1, ranges[0].end());
+			break;
+		default:
+			assert(false);
+			break;
+		}
+		destroy(ranges[0].begin());
+		--size_;
+		auto new_start = start_ + 1;
+		if (new_start == cap_)
+		{
+			new_start = 0;
+		}
+		start_ = new_start;
+		return std::next(p);
+	}
+
+	constexpr iterator erase(const_iterator start, const_iterator stop)
+	{
+		size_type count_before = start - begin();
+		size_type count_after = end() - stop;
+		if(count_before < count_after)
+		{
+			return erase_move_front(start, stop);
+		}
+		else
+		{
+			return erase_move_back(start, stop);
+		}
+	}
+	
+	constexpr iterator erase_move_back(const_iterator start, const_iterator stop)
+	{
+		auto start_pos = as_non_const_iterator(start);
+		auto stop_pos = as_non_const_iterator(stop);
+		copy_ranges(as_moving_split_ranges(stop, end()), as_split_ranges(start, stop));
+		pop_back_n(stop_pos - start_pos);
+		return stop_pos;
+	}
+
+	constexpr iterator erase_move_front(const_iterator start, const_iterator stop)
+	{
+		auto start_pos = as_non_const_iterator(start);
+		auto stop_pos = as_non_const_iterator(stop);
+		copy_ranges_backward(as_moving_split_ranges(begin(), start), as_split_ranges(start, stop));
+		pop_front_n(stop_pos - start_pos);
+		return stop_pos;
+	}
+
+
+	/* front/back operations */
+	template <class U, std::enable_if_t<std::is_same_v<T, std::remove_cvref_t<U>>, bool> = true>
+	constexpr void push_back(U&& value)
+	{
+		emplace_back(std::forward<U>(value));
+	}
+
+	template <class U, std::enable_if_t<std::is_same_v<T, std::remove_cvref_t<U>>, bool> = true>
+	constexpr void push_front(U&& value)
+	{
+		emplace_front(std::forward<U>(value));
+	}
+
+	constexpr void pop_back()
+	{
+		assert(size() != 0);
+		--size_;
+		destroy(end().get_pointer());
+	}
+
+	constexpr void pop_back_n(size_type count)
+	{
+		assert(size() >= count);
+		for (const auto& r : reversed(get_ranges().last(count)))
+		{
+			for (T& item : reversed(r))
+			{
+				destroy(std::addressof(item));
+			}
+		}
+		size_ -= count;
+	}
+
+	constexpr void pop_front()
+	{
+		assert(size() != 0);
+		destroy(begin().get_pointer());
+		--size_;
+		auto new_start = start_ + 1;
+		if (new_start == capacity())
+		{
+			new_start = 0;
+		}
+		start_ = new_start;
+	}
+
+	constexpr void pop_front_n(size_type count)
+	{
+		assert(size() >= count);
+		auto new_begin_index = (begin() + count).get_index();
+		for (const auto& r : reversed(get_ranges().last(count)))
+		{
+			for (T& item : reversed(r))
+			{
+				destroy(std::addressof(item));
+			}
+		}
+		size_ -= count;
+		start_ = new_begin_index;
+	}
+
+	constexpr void resize(size_type count)
+	{
+		if(count > size())
+		{
+			append(detail::DefaultValueIterator<T>(0), detail::DefaultValueIterator<T>(count));
+		}
+		else if (count < size())
+		{
+			pop_back_n(size() - count);
+		}
+	}
+
+	constexpr void resize_remove_front(size_type count)
+	{
+		if(count > size())
+		{
+			append(detail::DefaultValueIterator<T>(0), detail::DefaultValueIterator<T>(count));
+		}
+		else if (count < size())
+		{
+			pop_front_n(size() - count);
+		}
 	}
 
 	template <
@@ -1714,8 +3062,7 @@ public:
 		// Push the remainder of the iterator range into 'tmp'.
 		// Once we've successfully copied everything else into 'tmp', we'll transfer over
 		// all of the stuff still contained in '*this'.
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(grow_size(this->capacity()));
+		auto tmp = make_temporary_buffer(grow_size(this->capacity()));
 		tmp.start_ = compute_offset(this->start_, this->size(), tmp.capacity());
 		for(;;) {
 			// Need to leave room for the stuff currently contained in '*this'.
@@ -1742,11 +3089,9 @@ public:
 	template <
 		class It,
 		std::enable_if_t<
-			detail::is_one_of_v<
+			std::is_convertible_v<
 				typename std::iterator_traits<It>::iterator_category, 
-				std::forward_iterator_tag,
-				std::bidirectional_iterator_tag,
-				std::random_access_iterator_tag
+				std::forward_iterator_tag
 			>,
 			bool
 		> = false
@@ -1757,8 +3102,7 @@ public:
 			append_fast(first, last, count);
 			return;
 		}
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(this->size() + count);
+		auto tmp = make_temporary_buffer(size() + count);
 		tmp.start_ = compute_offset(this->start_, this->size(), tmp.capacity());
 		tmp.append_fast(first, last, count);
 		for(auto range: detail::reversed(this->get_ranges())) {
@@ -1800,8 +3144,7 @@ public:
 		// Push the remainder of the iterator range into 'tmp'.
 		// Once we've successfully copied everything else into 'tmp', we'll transfer over
 		// all of the stuff still contained in '*this'.
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(grow_size(this->capacity()));
+		auto tmp = make_temporary_buffer(grow_size(this->capacity()));
 		tmp.start_ = this->start_;
 		for(;;) {
 			// Need to leave room for the stuff currently contained in '*this'.
@@ -1840,11 +3183,9 @@ public:
 	template <
 		class It,
 		std::enable_if_t<
-			detail::is_one_of_v<
+			std::is_convertible_v<
 				typename std::iterator_traits<It>::iterator_category, 
-				std::forward_iterator_tag,
-				std::bidirectional_iterator_tag,
-				std::random_access_iterator_tag
+				std::forward_iterator_tag
 			>,
 			bool
 		> = false
@@ -1855,8 +3196,7 @@ public:
 			prepend_fast(first, last, count);
 			return;
 		}
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(this->size() + count);
+		auto tmp = make_temporary_buffer(size() + count);
 		tmp.start_ = this->start_;
 		tmp.prepend_fast(first, last, count);
 		for(auto range: this->get_ranges()) {
@@ -1961,34 +3301,36 @@ public:
 		}
 	}
 
+
+	constexpr shape_type buffer_shape() const { return {capacity(), begin_index()}; }
+
 private:
 
 	template <class It>
 	constexpr void insert_slow(const_iterator pos, It first, It last, size_type count) {
-		auto tmp = make_temporary_buffer();
-		tmp.reserve(size() + count);
+		auto tmp = make_temporary_buffer(size() + count);
 		tmp.start_ = pos.get_index();
 		tmp.append_fast(first, last, count);
-		for(auto range: as_split_ranges(as_mutable_iterator(pos), this->end())) {
+		for(auto range: as_split_ranges(as_mutable_iterator(pos), end())) {
 			tmp.append_fast(
 				try_make_move_iterator(range.begin()),
 				try_make_move_iterator(range.end())
 			); 
 		}
-		for(auto range: detail::reversed(as_split_ranges(this->begin(), as_mutable_iterator(pos)))) {
+		for(auto range: detail::reversed(as_split_ranges(begin(), as_mutable_iterator(pos)))) {
 			tmp.prepend_fast(
 				try_make_move_iterator(range.begin()),
 				try_make_move_iterator(range.end())
 			);
 		}
-		this->commit(tmp);
+		commit(tmp);
 	}
 
 	template <class It>
-	constexpr void insert_back_fast(const_iterator pos, It first, It last, size_type count) {
+	constexpr void insert_move_back_fast_2(const_iterator pos, It first, It last, size_type count) {
 		if(storage_is_split()) {
 			if(pos.get_has_wrapped()) {
-				return insert_back_simple(pos, first, last, count);
+				return insert_move_back_simple(pos, first, last, count);
 			}
 			pointer pos_addr = pos.get_pointer();
 			pointer split_pos = data_ + cap_;
@@ -2021,7 +3363,7 @@ private:
 			}
 		} else {
 			if((capacity() - (begin_index() + size()) >= count)) {
-				return insert_back_simple(pos, first, last, count);
+				return insert_move_back_simple(pos, first, last, count);
 			}
 		}
 		if(count <= (pos.get_pointer() - (data_ + capacity()))) {
@@ -2029,11 +3371,10 @@ private:
 			// inserted range *will* overlap with the physical end of the buffer
 
 		}
-
 	}
 
 	template <class It>
-	constexpr void insert_back_simple(const_iterator pos, It first, It last, size_type count) {
+	constexpr void insert_move_back_simple(const_iterator pos, It first, It last, size_type count) {
 		pointer start = as_mutable_iterator(pos).get_pointer();
 		pointer stop = end().get_pointer();
 		size_type dist_to_end = stop - start;
@@ -2044,7 +3385,7 @@ private:
 				std::make_move_iterator(stop),
 				count
 			);
-			std::move_backwards(start, stop - count, stop);
+			std::move_backward(start, stop - count, stop);
 			std::copy(first, last, as_mutable_iterator(pos));
 		} else {
 			It mid = detail::get_position_in_range(first, last, count, dist_to_end);
@@ -2058,100 +3399,175 @@ private:
 		}
 	}
 
+
 	template <class It>
-	constexpr void insert_back_fast(const_iterator pos, It first, It last, size_type count) {
-		assert(count <= size());
+	constexpr iterator insert_reallocate(const_iterator pos, It first, It last, size_type count)
+	{
+		size_type new_cap = count + size();
+		assert(new_cap > capacity());
+		auto buf = make_temporary_buffer(new_cap);
+		for (const auto& r : as_moving_split_ranges(begin(), as_non_const_iterator(pos)))
+		{
+			buf.append_no_split(r.begin(), r.end());
+		}
+		buf.append_no_split(first, last);
+		auto result = buf.end();
+		for (const auto& r : as_moving_split_ranges(as_non_const_iterator(pos), end()))
+		{
+			buf.append_no_split(r.begin(), r.end());
+		}
+		commit(buf);
+		return result;
+	}
+
+
+
+	template <class It>
+	constexpr iterator insert_move_back_fast(const_iterator pos, It first, It last, size_type count) {
+		assert(count <= capacity() - size());
 		size_type dest_index = pos - begin();
 		if(dest_index == size()) {
 			append_fast(first, last, count);
-			return;
+			return as_non_const_iterator(pos);
 		}
-		size_type end_index = index + count;
+		size_type end_index = dest_index + count;
 		assert(end_index <= capacity());
 		if(end_index <= size()) {
-			auto ranges_to_move = as_split_ranges(as_mutable_iterator(pos), this->end());
-			size_type tail_count = size() - end_index;
-			auto tail_ranges = get_ranges().last(tail_count);
-			for(auto range: ranges_to_move.last(count)) {
-				first = append_and_replace_fast(
-					first,
-					last,
-					std::make_move_iterator(range.begin()),
-					std::make_move_iterator(range.end())
-				);
+			// the inserted range won't overlap with the current logical end of the buffer
+			// 
+			//   [x,x,x,y,y,y]
+			//   [z,z] ^
+			auto ranges_to_move = as_split_ranges(as_mutable_iterator(pos), end());
+			auto total_to_move = ranges_to_move.total();
+			auto old_end = end();
+			for (auto r : ranges_to_move.last(count).as_moving_ranges())
+			{
+				append_fast(r.begin(), r.end());
 			}
-			try_move_ranges_backward(ranges_to_move.first(tail_count), tail_ranges);
-			auto dest_ranges = this->get_ranges().last(count);
-			for(auto range: ranges_to_move.first(count)) {
-				first = append_and_replace_fast(
-					first,
-					last,
-					std::make_move_iterator(range.begin()),
-					std::make_move_iterator(range.end())
-				);
-			}
-			assert(first == last);
-		} else {
-			size_type overlap = end_index - size();
-			It overlap_start = std::next(first, count - overlap);
-			this->append_fast(overlap_start, last, overlap);
-			auto dest_ranges = this->get_ranges().last(count - overlap)
-			for(auto range: dest_ranges) {
-				first = append_and_replace_fast(
-					first,
-					overlap_start,
-					try_make_move_iterator(range.begin()),
-					try_make_move_iterator(range.end())
-				);
-			}
-			assert(first == overlap_start);
+			copy_ranges_backward(ranges_to_move.first(count - total_to_move).as_moving_ranges(), ranges_to_move.last(count - total_to_move));
 		}
+		else {
+			// The inserted range will overlap with the current logical end of the buffer.
+			// 
+			//         [x,x,x,y,y,y]
+			//     [z,z,z,z] ^
+			// 1. First append the first part of the inserted range
+			//         [x,x,x,y,y,y,z]
+			//       [z,z,z] ^
+			// 2. Then, append the elements that need to be moved to fit the rest of the inserted range
+			//         [x,x,x,0,0,0,z,y,y,y]
+			//       [z,z,z] ^
+			// 2. Then, copy in the elements to insert
+			//         [x,x,x,z,z,z,z,y,y,y]
+			size_type overlap = end_index - size();
+			It overlap_start = detail::get_point_in_iterator_range(first, last, count - overlap, count);
+			auto ranges_to_move_from = this->get_ranges().last(count - overlap);
+			append_fast(overlap_start, last, overlap);
+			for (auto r : ranges_to_move_from.as_moving_ranges())
+			{
+				append_fast(r.begin(), r.end(), r.size());
+			}
+		}
+		for (auto r : as_split_ranges(as_non_const_iterator(pos), as_non_const_iterator(pos) + count))
+		{
+			for (auto& value : r)
+			{
+				assert(first != last);
+				value = *first++;
+			}
+		}
+		assert(first == last);
+
+		return as_non_const_iterator(pos);
 	}
 
 	template <class It>
-	constexpr void insert_front_fast(const_iterator pos, It first, It last, size_type count) {
-		assert(count <= size());
+	constexpr iterator insert_move_back_slow(const_iterator pos, It first, It last, size_type count)
+	{
+		return insert_reallocate(pos, first, last, count);
+	}
+
+	template <class It>
+	constexpr iterator insert_move_front_slow(const_iterator pos, It first, It last, size_type count)
+	{
+		return insert_reallocate(pos, first, last, count);
+	}
+
+	template <class It>
+	constexpr iterator insert_move_front_fast(const_iterator pos, It first, It last, size_type count) {
+		assert(count <= capacity() - size());
 		size_type dest_index = pos - begin();
 		if(dest_index == 0) {
 			prepend_fast(first, last, count);
-			return;
+			return begin();
 		}
-		auto initial_begin = begin();
 		if(dest_index >= count) {
+			// The index into the logical buffer is greater than the number of elements we're inserting.
+			// 
+			// example: dest_index=5,count=3
+			//       [w,w,w,x,x,z,z,z]
+			//         [y,y,y] ^ 
+			// 1. Prepend [w,w,w]:
+			//   [w,w,w,0,0,0,x,x,z,z,z]
+			//           [y,y,y] ^ 
+			// 2. Move [x,x] up to where [w,w,w] used to live.
+			//   [w,w,w,x,x,0,0,0,z,z,z]
+			//           [y,y,y] ^ 
+			// 3. Overwrite the empty slots where [w,x,x] used to live with [y,y,y]. 
+			//   [w,w,w,x,x,y,y,y,z,z,z]
+			// First we prepend the elements in [w,w,w], then move [x,x] to where [w,w,w] used to live by overwriting the front two elements of [w,w,w],
+			// then finally, we overwrite the storage where [w,x,x] used to live with [y,y,y].
+			
+			// 'to_be_moved' is the range of elements in the storage directly after the elements that we're prepending below, up to the end of the 
+			// storage that [first, last) are being written into.  This is the range [x,x] in the above example.  These elements are to be moved into
+			// the storage starting at the current logical start of the buffer, where we're moving elements from in the prepend operation below.
 			auto to_be_moved = get_ranges().first(dest_index).last(dest_index - count);
+			// 'front_ranges' is the destination range for 'to_be_moved'.  It's starts at the current logical start of the buffer and has the same length as
+			// 'to_be_moved'.
 			auto front_ranges = get_ranges().first(dest_index - count);
-			for(auto range: detail::reversed(get_ranges().first(count)) {
+
+			// Prepend the first 'count' elements to make room for the 'count' elements we're inserting.
+			for(auto range: detail::reversed(get_ranges().first(count))) {
 				this->prepend(
 					std::make_move_iterator(range.begin()),
 					std::make_move_iterator(range.end())
 				);
 			}
-			move_ranges(to_be_moved, front_ranges);
-			auto dest_start = begin() + dest_index;
-			auto dest_stop = dest_range_start + count;
-			assert(dest_stop.get_pointer() == pos.get_pointer());
-			for(auto range: as_split_ranges(dest_start, dest_stop)) {
-				for(auto pos = range.begin(); pos != range.end(); ++pos) {
-					assert(first != last);
-					*pos = *first++;
-				}
-			}
-			assert(first == last);
+			// Now move the elements in the logical range [dest_index, count) to the empty slots at the old logical start of the buffer (the logical start before
+			// we did the prepend operation).  Those elements where moved out of the way during the prepend operation.
+			copy_ranges(to_be_moved.as_moving_ranges(), front_ranges);
 		} else {
-			size_type overlap = count - dest_index;
-			first = this->prepend_fast(first, last, overlap);
-			size_type remaining = count - overlap;
-			auto dest_ranges = this->get_ranges().last(count - overlap)
-			for(auto range: dest_ranges) {
-				first = prepend_and_replace_fast(
-					first,
-					last,
-					try_make_move_iterator(range.begin()),
-					try_make_move_iterator(range.end())
-				);
+			// The index into the logical buffer is less than the number of elements we're inserting.
+			// 
+			// example: dest_index=5,count=3
+			//         [x,x,z,z,z]
+			//     [y,y,y] ^ 
+			// 1. Prepend [x,x,y]:
+			//   [x,x,y,0,0,z,z,z]
+			//       [y,y] ^ 
+			// 2. Move [y,y] into [0,0][x,x,y]:
+			//   [x,x,y,y,y,z,z,z]
+			auto mid = detail::get_point_in_iterator_range(first, last, count - dest_index, count);
+			auto ranges_to_prepend = get_ranges().first(dest_index);
+			auto dest_ranges = as_split_ranges(begin() + dest_index, begin() + (dest_index + count));
+			prepend(first, mid);
+			for (const auto& r : detail::reversed(ranges_to_prepend.as_moving_ranges()))
+			{
+				prepend(r.begin(), r.end());
 			}
-			assert(first == last);
 		}
+		// Finally, write the range [first, last) into the space we just made.
+		auto new_pos = begin() + dest_index;
+		for (auto r: as_split_ranges(new_pos, new_pos + count))
+		{
+			for (T& value : r)
+			{
+				assert(first != last);
+				value = *first++;
+			}
+		}
+		assert(first == last);
+		return new_pos;
 	}
 
 	constexpr void shift_left_front_overlap(size_type count) {
@@ -2224,7 +3640,7 @@ private:
 			as_split_ranges(stop, initial_end),
 			as_split_ranges(this->begin(), this->begin() + back_count)
 		);
-		gaurd.active = false;
+		guard.active = false;
 		this->pop_front_n(count);
 	}
 
@@ -2235,7 +3651,7 @@ private:
 		new_begin.set_has_wrapped(false);
 		auto new_end = new_begin + this->size();
 		auto guards = try_move_construct_ranges(
-			as_split_ranges(begin(), end()),
+			get_ranges(),
 			as_split_ranges(new_begin, new_end)
 		);
 		this->clear_fast();
@@ -2243,42 +3659,9 @@ private:
 	}
 
 	template <class Src, class Dest>
-	constexpr void try_move_ranges(Src src, Dest dest) {
-		assert(dest.total() == src.total());
-		if(dest.size() == 1) {
-			auto dest_pos = dest.begin()->begin();
-			auto dest_stop = dest.begin()->end();
-			for(auto range: src) {
-				assert(dest_stop - dest_pos >= range.size());
-				dest_pos = std::copy(
-					try_make_move_iterator(range.begin()),
-					try_make_move_iterator(range.end()),
-					dest_pos
-				);
-			}
-			assert(dest_pos == dest_stop);
-		} else if(src.size() == 1) {
-			auto src_pos = src.begin()->begin();
-			auto src_stop = src.begin()->end();
-			for(auto range: dest) {
-				assert(src_stop - src_pos >= range.size());
-				std::copy(
-					try_make_move_iterator(src_pos),
-					try_make_move_iterator(src_pos + range.size()),
-					range.begin()
-				);
-				src_pos += range.size();
-			}
-			assert(src_pos == src_stop);
-		} else {
-			auto src_first
-		}
-	}
-
-	template <class Src, class Dest>
 	static constexpr void copy_ranges(Src src, Dest dest) {
 		assert(dest.total() == src.total());
-		(void)detail::copy_ranges(src.begin(), src.end(), dest.begin());
+		auto [outer, inner] = detail::copy_ranges(src.begin(), src.end(), dest.begin());
 		assert(outer == dest.end());
 		assert(!inner || inner == dest.end()[-1].end());
 	}
@@ -2288,35 +3671,35 @@ private:
 		assert(dest.total() == src.total());
 		auto [outer, inner] = detail::copy_ranges_backward(src.begin(), src.end(), dest.end());
 		assert(outer == dest.begin());
-		assert(!inner || inner == dest.begin()->begin());
+		assert(!inner || *inner == dest.begin()->begin());
 	}
 
-	template <class Src, class Dest>
-	constexpr void move_ranges(Src src, Dest dest) {
-		copy_ranges(
-			SimpleRange(
-				std::make_move_iterator(src.begin()),
-				std::make_move_iterator(src.end())
-			),
-			dest
-		);
-	}
+	// template <class Src, class Dest>
+	// constexpr void move_ranges(Src src, Dest dest) {
+	// 	copy_ranges(
+	// 		detail::SimpleRange(
+	// 			std::make_move_iterator(src.begin()),
+	// 			std::make_move_iterator(src.end())
+	// 		),
+	// 		dest
+	// 	);
+	// }
 
-	template <class Src, class Dest>
-	constexpr void move_ranges_backward(Src src, Dest dest) {
-		copy_ranges_backward(
-			SimpleRange(
-				std::make_move_iterator(src.begin()),
-				std::make_move_iterator(src.end())
-			),
-			dest
-		);
-	}
+	// template <class Src, class Dest>
+	// constexpr void move_ranges_backward(Src src, Dest dest) {
+	// 	copy_ranges_backward(
+	// 		detail::SimpleRange(
+	// 			std::make_move_iterator(src.begin()),
+	// 			std::make_move_iterator(src.end())
+	// 		),
+	// 		dest
+	// 	);
+	// }
 
 	template <class Src, class Dest>
 	constexpr void try_move_ranges(Src src, Dest dest) {
 		copy_ranges(
-			SimpleRange(
+			detail::SimpleRange(
 				try_make_move_iterator(src.begin()),
 				try_make_move_iterator(src.end())
 			),
@@ -2327,7 +3710,7 @@ private:
 	template <class Src, class Dest>
 	constexpr void try_move_ranges_backward(Src src, Dest dest) {
 		copy_ranges_backward(
-			SimpleRange(
+			detail::SimpleRange(
 				try_make_move_iterator(src.begin()),
 				try_make_move_iterator(src.end())
 			),
@@ -2350,7 +3733,7 @@ private:
 				}
 			}
 			assert(guard_.stop == dest.begin()->end());
-			gaurd_.alloc = nullptr;
+			guard_.alloc = nullptr;
 		} else {
 			RangeGuard guard1_{std::addressof(this->alloc()), dest.begin()->begin(), dest.begin()->begin()};
 			assert(src.size() == 1u);
@@ -2367,26 +3750,32 @@ private:
 				this->construct(guard2_.stop, *pos);
 			}
 			assert(pos == src_stop);
-			gaurd2_.alloc = nullptr;
-			gaurd1_.alloc = nullptr;
+			guard2_.alloc = nullptr;
+			guard1_.alloc = nullptr;
 		}
 	}
 
 	constexpr void clear_fast() {
 		for(auto range: get_ranges()) {
 			for(auto& elem: range) {
-				this->destroy(std::addressof(elem));
+				destroy(std::addressof(elem));
 			}
 		}
+		size_ = 0;
 	}
 
-	constexpr CircularBuffer<T, AllocatorRef<Allocator>> make_temporary_buffer() const noexcept {
-		return CircularBuffer<T, AllocatorRef<Allocator>>(AllocatorRef<Allocator>(this->alloc()));
+	constexpr temporary_buffer_type make_temporary_buffer() const
+	{
+		return temporary_buffer_type(this->alloc());
+	}
+
+	constexpr temporary_buffer_type make_temporary_buffer(size_type cap) const
+	{
+		return temporary_buffer_type(reserve_tag, cap, alloc());
 	}
 
 	constexpr void reserve_slow(size_type new_cap, size_type new_start) {
-		auto tmp = make_temporary_buffer();
-		tmp.reserve_fast(new_cap);
+		auto tmp = make_temporary_buffer(new_cap);
 		tmp.start_ = new_start;
 		for(auto range: get_ranges()) {
 			tmp.append_fast(
@@ -2394,14 +3783,7 @@ private:
 				try_make_move_iterator(range.end())
 			);
 		}
-		this->clear();
-		if(this->data_) {
-			this->deallocate(this->data_, this->capacity());
-		}
-		this->data_  = std::exchange(tmp.data_, nullptr);
-		this->cap_   = std::exchange(tmp.cap_, 0u);
-		tmp.size_ = 0u;
-		tmp.start_ = 0u;
+		commit(tmp);
 	}
 
 	constexpr void reserve_fast(size_type count) {
@@ -2439,10 +3821,95 @@ private:
 		assert(first == last);
 		return first;
 	}
+	
+	template <class It>
+	constexpr It append_no_split(It first, It last) {
+#ifndef NDEBUG
+		if(storage_is_split())
+		{
+			assert(end().get_pointer() < begin().get_pointer());
+			assert(end().get_pointer() - begin().get_pointer() >= std::distance(first, last));
+		}
+		else
+		{
+			assert(begin().get_pointer() <= end().get_pointer());
+			assert((data_ + cap_) - end().get_pointer() >= std::distance(first, last));
+		}
+#endif /* NDEBUG */
+		auto dest = end().get_pointer();
+		while(first != last)
+		{
+			this->construct(dest++, *first++);
+			++size_;
+		}
+		assert(first == last);
+		return first;
+	}
+
+	template <class It>
+	constexpr void assign_empty(It first, It last, size_type size_hint)
+	{
+		assert(size_ == 0);
+		if(this->cap_ < size_hint)
+		{
+			reallocate_empty(size_hint);
+		}
+		start_ = 0;
+		auto stop = data_ + size_hint;
+		for(auto p = data_; p != stop; ++p)
+		{
+			assert(first != last);
+			this->construct(p, *first++);
+			size_++;
+		}
+		assert(first == last);
+	}
+	
+	constexpr void assign_empty(size_type count, const T& value)
+	{
+		assert(size_ == 0);
+		if(this->cap_ < count)
+		{
+			reallocate_empty(count);
+		}
+		start_ = 0;
+		auto stop = data_ + count;
+		for(auto p = data_; p != stop; ++p)
+		{
+			this->construct(p, value);
+			size_++;
+		}
+	}
+
+	constexpr void reallocate_empty(size_type count)
+	{
+		assert(size_ == 0);
+		release_memory_empty();
+		initialize_allocation(count);
+	}
+
+	constexpr void release_memory_empty()
+	{
+		assert(size_ == 0);
+		if(cap_ != 0)
+		{
+			assert(data_);
+			deallocate(data_, cap_);
+			data_ = nullptr;
+			cap_ = 0;
+		}
+	}
+
 
 	template <class SrcIt, class DestIt>
 	constexpr SrcIt append_and_replace_fast(SrcIt src_first, SrcIt src_last, DestIt dest_first, DestIt dest_last) {
 		// TODO: Measure whether this is faster than just doing both operations in batches.
+
+		// in the case of move iterators, we need to cast to an lvalue.
+		constexpr auto cast_to_lvalue = [](typename std::iterator_traits<DestIt>::value_type&& rvalue) -> typename std::iterator_traits<DestIt>::value_type&
+		{
+			return *std::addressof(rvalue);
+		};
 		for(auto range: get_spare_ranges()) {
 			for(auto& elem: range) {
 				if(dest_first == dest_last) {
@@ -2450,7 +3917,8 @@ private:
 				}
 				this->construct(std::addressof(elem), *dest_first);
 				++size_;
-				*dest_first++ = *src_first++;
+				cast_to_lvalue(*dest_first) = *src_first++;
+				++dest_first;
 			}
 		}
 		assert(dest_first == dest_last);
@@ -2469,7 +3937,8 @@ private:
 		auto ranges = get_spare_ranges();
 		assert(size_hint <= ranges.total());
 		if(ranges.size() == 1 || (ranges.begin()[1].size() >= size_hint)) {
-			auto range = ranges.end()[-1];
+			auto range = ranges.size() == 1 ? ranges.front() : ranges.back();
+			assert(range.size() >= size_hint);
 			auto p = range.end() - size_hint;
 			RangeGuard guard_{std::addressof(this->alloc()), p, p};
 			for(std::size_t i = 0u; i < size_hint; (void)++i, ++guard_.stop) {
@@ -2491,7 +3960,7 @@ private:
 			const size_type front_range_count = front_range.size();
 			p = front_range.begin(); 
 			RangeGuard front_guard_{std::addressof(this->alloc()), p, p};
-			assert(front_range_count == (size_hint - back_range_size));
+			assert(front_range_count == (size_hint - back_range_count));
 			for(std::size_t i = 0u; i < back_range_count; (void)++i, ++back_guard_.stop) {
 				assert(first != last);
 				this->construct(back_guard_.stop, *first++);
@@ -2500,11 +3969,22 @@ private:
 			front_guard_.alloc = nullptr;
 			back_guard_.alloc = nullptr;
 		}
+		assert(first == last);
+		if (start_ >= size_hint)
+		{
+			start_ -= size_hint;
+		}
+		else
+		{
+			start_ = cap_ - (size_hint - start_);
+		}
+		
+		size_ += size_hint;
 		return first;
 	}
-
-	constexpr void commit(CircularBuffer<T, AllocatorRef<Allocator>>& other) noexcept {
-		this->clear();
+	
+	constexpr void commit(temporary_buffer_type& other) noexcept {
+		clear_fast();
 		if(this->data_) {
 			this->deallocate(this->data_, this->capacity());
 		}
@@ -2514,116 +3994,135 @@ private:
 		this->start_ = std::exchange(other.start_, 0u);
 	}
 
-	template <class ... Args>
-	constexpr void emplace_back_fast(Args&& ... args) {
-		construct(this->end().get_raw_pointer(), std::forward<Args>(args)...);
-		++size_;
+	constexpr void commit_empty(temporary_buffer_type& other) noexcept {
+		assert(!data_);
+		assert(size_ == 0);
+		assert(cap_ == 0);
+		assert(start_ == 0);
+		this->data_  = std::exchange(other.data_, nullptr);
+		this->cap_   = std::exchange(other.cap_, 0u);
+		this->size_  = std::exchange(other.size_, 0u);
+		this->start_ = std::exchange(other.start_, 0u);
 	}
 
-	static constexpr std::optional<size_type> grow_size(size_type n) {
-		using wide_int_type = next_widest_int_t<size_type>;
+	template <class ... Args>
+	constexpr reference emplace_back_fast(Args&& ... args) {
+		auto ptr = this->end().get_raw_pointer();
+		construct(this->end().get_raw_pointer(), std::forward<Args>(args)...);
+		++size_;
+		return *ptr;
+	}
+
+	template <class ... Args>
+	constexpr reference emplace_front_fast(Args&& ... args) {
+		auto pos = std::prev(this->begin());
+		auto ptr = pos.get_raw_pointer();
+		construct(pos.get_raw_pointer(), std::forward<Args>(args)...);
+		++size_;
+		start_ = pos.get_index();
+		return *pos;
+	}
+
+	static constexpr size_type grow_size(size_type n) {
 		if(n == 0) {
 			return 1u;
 		}
 		if(n == 1) {
 			return 2u;
 		}
-		if((std::numeric_limits<size_type>::max() / 16ul) >= n) {
+		if((std::numeric_limits<size_type>::max() / 8) >= n) {
 			// Approximate the golden ratio if it won't overflow.
-			n *= 16ul;
-			n /= 10ul;
+			n *= 8;
+			n /= 5;
 			return n;
-		} 
-		if constexpr(sizeof(next_widest_int_t<size_type>) > sizeof(size_type)) {
-			// Use a wider integer type if possible.
-			next_widest_int_t<size_type> widened = n;
-			widened *= 16ul;
-			widened /= 10ul;
-			size_type next_size = static_cast<size_type>(widened);
-			if(next_size <= n) {
-				return std::nullopt;
-			}
-			return next_size;
 		} else {
-			// Use floating point as a last resort.
-			constexpr double golden_ratio = 1.6180339887498948482045868343656381177203091798057628621354486;
-			double grown = golden_ratio * n;
-			if(grown > std::numeric_limits<size_type>::max()) {
-				return std::nullopt;
+			auto old_n = n;
+			n /= 5;
+			assert(n > 0u);
+			n *= 8;
+			if(n <= old_n)
+			{
+				// overflow
+				return std::numeric_limits<size_type>::max();
 			}
-			return static_cast<size_type>(grown);
 		}
 	}
-
+	
 	static constexpr std::optional<size_type> shrink_size(size_type n) {
-		using wide_int_type = next_widest_int_t<size_type>;
 		if(n == 0) {
 			return std::nullopt;
-		}
-		if(n == 1) {
+		} else if(n == 1) {
 			return 0u;
-		}
-		if((std::numeric_limits<size_type>::max() / 10ul) >= n) {
+		} else if((std::numeric_limits<size_type>::max() / 5ul) >= n) {
 			// Approximate the golden ratio if it won't overflow.
-			n *= 10ul;
-			n /= 16ul;
+			n *= 5ul;
+			n /= 8ul;
 			return n;
-		} 
-		if constexpr(sizeof(next_widest_int_t<size_type>) > sizeof(size_type)) {
-			// Use a wider integer type if possible.
-			next_widest_int_t<size_type> widened = n;
-			widened *= 10ul;
-			widened /= 16ul;
-			return static_cast<size_type>(widened);
 		} else {
-			// Use floating point as a last resort.
-			constexpr double golden_ratio = 1.6180339887498948482045868343656381177203091798057628621354486;
-			return static_cast<size_type>(n / golden_ratio);
+			n /= 8ul;
+			n *= 5ul;
+			return n;
 		}
 	}
 
 	static constexpr SplitRanges<const_pointer> as_split_ranges(const_iterator first, const_iterator last) {
 		assert(first <= last);
-		if(first.get_has_wrapped() || !last.get_has_wrapped() || last.get_index() == 0) {
+		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>{first.get_pointer(), last.tagged_index_ - first.tagged_index_}
+				SplitRange<const_pointer>(first.get_pointer(), last.tagged_index_ - first.tagged_index_)
 			);
 		}
 		return SplitRanges<const_pointer>(
-			SplitRange<const_pointer>{first.get_pointer(), first.cap_ - (first.get_pointer() - data_)},
-			SplitRange<const_pointer>{last.data_, last.start_}
+			SplitRange<const_pointer>(first.get_pointer(), first.cap_ - first.get_index()),
+			SplitRange<const_pointer>(last.data_, last.start_)
 		);
 	}
 
 	static constexpr SplitRanges<pointer> as_split_ranges(iterator first, iterator last) {
 		assert(first <= last);
-		if(first.get_has_wrapped() || !last.get_has_wrapped() || last.get_index() == 0) {
+		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
 			return SplitRanges<pointer>(
-				SplitRange<pointer>{first.get_pointer(), last.tagged_index_ - first.tagged_index_}
+				SplitRange<pointer>(first.get_pointer(), last.tagged_index_ - first.tagged_index_)
 			);
 		}
 		return SplitRanges<pointer>(
-			SplitRange<pointer>{first.get_pointer(), first.cap_ - (first.get_pointer() - data_)},
-			SplitRange<pointer>{last.data_, last.start_}
+			SplitRange<pointer>(first.get_pointer(), first.cap_ - first.get_index()),
+			SplitRange<pointer>(last.data_, last.get_index())
 		);
 	}
+
+
+	static constexpr SplitRanges<std::move_iterator<pointer>> as_moving_split_ranges(iterator first, iterator last) {
+		assert(first <= last);
+		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
+			return SplitRanges<std::move_iterator<pointer>>(
+				SplitRange<std::move_iterator<pointer>>(std::make_move_iterator(first.get_pointer()), last.tagged_index_ - first.tagged_index_)
+			);
+		}
+		return SplitRanges<std::move_iterator<pointer>>(
+			SplitRange<std::move_iterator<pointer>>(std::make_move_iterator(first.get_pointer()), first.cap_ - first.get_index()),
+			SplitRange<std::move_iterator<pointer>>(std::make_move_iterator(last.data_), last.get_index())
+		);
+	}
+
+
 
 	constexpr SplitRanges<const_pointer> get_spare_ranges() const {
 		auto start = begin();
 		auto stop = end();
 		if(stop.get_has_wrapped()) {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>{stop.get_pointer(), start_.tagged_index_ - stop.get_index()}
+				SplitRange<const_pointer>(stop.get_pointer(), start_.tagged_index_ - stop.get_index())
 			);
 			
 		} else if(start.tagged_index_ == 0u) {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>{stop.get_pointer(), cap_ - stop.get_index()}
+				SplitRange<const_pointer>(stop.get_pointer(), cap_ - stop.get_index())
 			);
 		} else {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>{stop.get_pointer(), cap_ - stop.get_index()},
-				SplitRange<const_pointer>{data_, start.tagged_index_},
+				SplitRange<const_pointer>(stop.get_pointer(), cap_ - stop.get_index()),
+				SplitRange<const_pointer>(data_, start.tagged_index_)
 			);
 		}
 	}
@@ -2633,37 +4132,57 @@ private:
 		auto stop = end();
 		if(stop.get_has_wrapped()) {
 			return SplitRanges<pointer>(
-				SplitRange<pointer>{stop.get_pointer(), start_.tagged_index_ - stop.get_index()}
+				SplitRange<pointer>(stop.get_pointer(), start.tagged_index_ - stop.get_index())
 			);
 			
 		} else if(start.tagged_index_ == 0u) {
 			return SplitRanges<pointer>(
-				SplitRange<pointer>{stop.get_pointer(), cap_ - stop.get_index()}
+				SplitRange<pointer>(stop.get_pointer(), cap_ - stop.get_index())
 			);
 		} else {
 			return SplitRanges<pointer>(
-				SplitRange<pointer>{stop.get_pointer(), cap_ - stop.get_index()},
-				SplitRange<pointer>{data_, start.tagged_index_},
+				SplitRange<pointer>(stop.get_pointer(), cap_ - stop.get_index()),
+				SplitRange<pointer>(data_, start.tagged_index_)
 			);
 		}
 	}
+
+	constexpr SplitRanges<pointer> get_ranges() {
+		auto start = begin();
+		auto stop = end();
+		if(!stop.get_has_wrapped()) {
+			return SplitRanges<pointer>(
+				SplitRange<pointer>(start.get_pointer(), stop.tagged_index_ - start.tagged_index_)
+			);
+		} else if(stop.get_index() == 0u) {
+			return SplitRanges<pointer>(
+				SplitRange<pointer>(start.get_pointer(), cap_ - start.tagged_index_)
+			);
+		} else {
+			return SplitRanges<pointer>(
+				SplitRange<pointer>(start.get_pointer(), cap_ - start.tagged_index_),
+				SplitRange<pointer>(data_, stop.get_index())
+			);
+		}
+	}
+
 
 	constexpr SplitRanges<const_pointer> get_ranges() const {
 		auto start = begin();
 		auto stop = end();
 		if(!stop.get_has_wrapped()) {
-			return SplitRanges<const_pointer>{
-				SplitRange<const_pointer>{start.get_pointer(), stop.tagged_index_ - start.tagged_index_}
-			};
+			return SplitRanges<const_pointer>(
+				SplitRange<const_pointer>(start.get_pointer(), stop.tagged_index_ - start.tagged_index_)
+			);
 		} else if(stop.get_index() == 0u) {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>{start.get_pointer(), cap_ - start.tagged_index_}
+				SplitRange<const_pointer>(start.get_pointer(), cap_ - start.tagged_index_)
 			);
 		} else {
-			return SplitRanges<const_pointer>{
-				SplitRange<const_pointer>{start.get_pointer(), cap_ - start.tagged_index_},
-				SplitRange<const_pointer>{data_, stop.get_index()}
-			};
+			return SplitRanges<const_pointer>(
+				SplitRange<const_pointer>(start.get_pointer(), cap_ - start.tagged_index_),
+				SplitRange<const_pointer>(data_, stop.get_index())
+			);
 		}
 	}
 
@@ -2671,12 +4190,12 @@ private:
 	static constexpr auto try_make_move_iterator(It it)
 		-> std::conditional_t<
 			std::is_nothrow_move_constructible_v<T>
-			|| !detail::is_copy_insertible_v<T>,
+			|| !detail::is_copy_insertible_v<Allocator, T>,
 			std::move_iterator<It>,
 			It
 		>
 	{
-		if constexpr(std::is_nothrow_move_constructible_v<T> || !detail::is_copy_insertible_v<T>) {
+		if constexpr(std::is_nothrow_move_constructible_v<T> || !detail::is_copy_insertible_v<Allocator, T>) {
 			return std::make_move_iterator(it);
 		} else {
 			return it;
@@ -2704,13 +4223,22 @@ private:
 		return (capacity() - begin_index()) < size();
 	}
 
-	template <class U, class OtherAlloc>
-	friend class CircularBuffer;
+	static iterator as_non_const_iterator(const_iterator it)
+	{
+		iterator result;
+		result.data_ = const_cast<pointer>(it.data_);
+		result.cap_ = it.cap_;
+		result.tagged_index_ = it.tagged_index_;
+		return result;
+	}
 
-	pointer data_;
-	size_type cap_;
-	size_type size_;
-	size_type start_;
+	template <class U, class OtherAlloc>
+	friend struct CircularBuffer;
+
+	pointer data_ = nullptr;
+	size_type cap_ = 0;
+	size_type size_ = 0;
+	size_type start_ = 0;
 };
 
 } /* inline namespace circular_buffer */
