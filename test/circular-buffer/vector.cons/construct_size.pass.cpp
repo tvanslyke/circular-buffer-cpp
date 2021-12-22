@@ -10,7 +10,7 @@
 
 // explicit vector(size_type n);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -62,13 +62,13 @@ test(typename C::size_type n)
 
 int main(int, char**)
 {
-    test<std::vector<int> >(50);
-    test<std::vector<DefaultOnly> >(500);
+    test<tim::CircularBuffer<int> >(50);
+    test<tim::CircularBuffer<DefaultOnly> >(500);
     assert(DefaultOnly::count == 0);
 #if TEST_STD_VER >= 11
-    test<std::vector<int, min_allocator<int>> >(50);
-    test<std::vector<DefaultOnly, min_allocator<DefaultOnly>> >(500);
-    test2<std::vector<DefaultOnly, test_allocator<DefaultOnly>> >( 100, test_allocator<DefaultOnly>(23));
+    test<tim::CircularBuffer<int, min_allocator<int>> >(50);
+    test<tim::CircularBuffer<DefaultOnly, min_allocator<DefaultOnly>> >(500);
+    test2<tim::CircularBuffer<DefaultOnly, test_allocator<DefaultOnly>> >( 100, test_allocator<DefaultOnly>(23));
     assert(DefaultOnly::count == 0);
 #endif
 

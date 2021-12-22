@@ -464,7 +464,7 @@ _LIBCPP_END_NAMESPACE_STD
 namespace TCT {
 
 template <class T = CopyInsertable<1>>
-using vector = std::vector<T, ContainerTestAllocator<T, T> >;
+using vector = tim::CircularBuffer<T, ContainerTestAllocator<T, T> >;
 template <class T = CopyInsertable<1>>
 using deque = std::deque<T, ContainerTestAllocator<T, T> >;
 template <class T = CopyInsertable<1>>

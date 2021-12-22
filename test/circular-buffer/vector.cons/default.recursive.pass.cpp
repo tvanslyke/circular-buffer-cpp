@@ -10,13 +10,13 @@
 // class vector
 // vector();
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 
 #include "test_macros.h"
 
 struct X
 {
-    std::vector<X> q;
+    tim::CircularBuffer<X> q;
 };
 
 int main(int, char**)

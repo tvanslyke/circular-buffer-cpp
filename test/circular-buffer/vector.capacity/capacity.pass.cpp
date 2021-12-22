@@ -10,7 +10,7 @@
 
 // size_type capacity() const;
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -20,12 +20,12 @@
 int main(int, char**)
 {
     {
-        std::vector<int> v;
+        tim::CircularBuffer<int> v;
         assert(v.capacity() == 0);
         assert(is_contiguous_container_asan_correct(v));
     }
     {
-        std::vector<int> v(100);
+        tim::CircularBuffer<int> v(100);
         assert(v.capacity() == 100);
         v.push_back(0);
         assert(v.capacity() > 101);
@@ -33,12 +33,12 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 11
     {
-        std::vector<int, min_allocator<int>> v;
+        tim::CircularBuffer<int, min_allocator<int>> v;
         assert(v.capacity() == 0);
         assert(is_contiguous_container_asan_correct(v));
     }
     {
-        std::vector<int, min_allocator<int>> v(100);
+        tim::CircularBuffer<int, min_allocator<int>> v(100);
         assert(v.capacity() == 100);
         v.push_back(0);
         assert(v.capacity() > 101);

@@ -12,7 +12,7 @@
 
 // iterator insert(const_iterator position, value_type&& x);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -24,8 +24,8 @@
 int main(int, char**)
 {
     {
-        std::vector<MoveOnly> v(100);
-        std::vector<MoveOnly>::iterator i = v.insert(v.cbegin() + 10, MoveOnly(3));
+        tim::CircularBuffer<MoveOnly> v(100);
+        tim::CircularBuffer<MoveOnly>::iterator i = v.insert(v.cbegin() + 10, MoveOnly(3));
         assert(v.size() == 101);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);
@@ -37,8 +37,8 @@ int main(int, char**)
             assert(v[j] == MoveOnly());
     }
     {
-        std::vector<MoveOnly, limited_allocator<MoveOnly, 300> > v(100);
-        std::vector<MoveOnly, limited_allocator<MoveOnly, 300> >::iterator i = v.insert(v.cbegin() + 10, MoveOnly(3));
+        tim::CircularBuffer<MoveOnly, limited_allocator<MoveOnly, 300> > v(100);
+        tim::CircularBuffer<MoveOnly, limited_allocator<MoveOnly, 300> >::iterator i = v.insert(v.cbegin() + 10, MoveOnly(3));
         assert(v.size() == 101);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);
@@ -50,8 +50,8 @@ int main(int, char**)
             assert(v[j] == MoveOnly());
     }
     {
-        std::vector<MoveOnly, min_allocator<MoveOnly>> v(100);
-        std::vector<MoveOnly, min_allocator<MoveOnly>>::iterator i = v.insert(v.cbegin() + 10, MoveOnly(3));
+        tim::CircularBuffer<MoveOnly, min_allocator<MoveOnly>> v(100);
+        tim::CircularBuffer<MoveOnly, min_allocator<MoveOnly>>::iterator i = v.insert(v.cbegin() + 10, MoveOnly(3));
         assert(v.size() == 101);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);

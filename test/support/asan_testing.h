@@ -16,7 +16,7 @@ extern "C" int __sanitizer_verify_contiguous_container
      ( const void *beg, const void *mid, const void *end );
 
 template <typename T, typename Alloc>
-bool is_contiguous_container_asan_correct ( const std::vector<T, Alloc> &c )
+bool is_contiguous_container_asan_correct ( const tim::CircularBuffer<T, Alloc> &c )
 {
     if ( std::is_same<Alloc, std::allocator<T> >::value && c.data() != NULL)
         return __sanitizer_verify_contiguous_container (
@@ -26,7 +26,7 @@ bool is_contiguous_container_asan_correct ( const std::vector<T, Alloc> &c )
 
 #else
 template <typename T, typename Alloc>
-bool is_contiguous_container_asan_correct ( const std::vector<T, Alloc> &)
+bool is_contiguous_container_asan_correct ( const tim::CircularBuffer<T, Alloc> &)
 {
     return true;
 }

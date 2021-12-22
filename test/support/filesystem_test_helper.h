@@ -11,7 +11,7 @@
 #include <fstream>
 #include <random>
 #include <chrono>
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <regex>
 
 #include "test_macros.h"
@@ -448,7 +448,7 @@ inline std::error_code GetTestEC(unsigned Idx = 0) {
 }
 
 inline bool ErrorIsImp(const std::error_code& ec,
-                       std::vector<std::errc> const& errors) {
+                       tim::CircularBuffer<std::errc> const& errors) {
   for (auto errc : errors) {
     if (ec == std::make_error_code(errc))
       return true;
@@ -458,7 +458,7 @@ inline bool ErrorIsImp(const std::error_code& ec,
 
 template <class... ErrcT>
 inline bool ErrorIs(const std::error_code& ec, std::errc First, ErrcT... Rest) {
-  std::vector<std::errc> errors = {First, Rest...};
+  tim::CircularBuffer<std::errc> errors = {First, Rest...};
   return ErrorIsImp(ec, errors);
 }
 

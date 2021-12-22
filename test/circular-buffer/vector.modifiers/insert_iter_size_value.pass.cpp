@@ -10,7 +10,7 @@
 
 // iterator insert(const_iterator position, size_type n, const value_type& x);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 #include <cstddef>
 
@@ -22,8 +22,8 @@
 int main(int, char**)
 {
     {
-        std::vector<int> v(100);
-        std::vector<int>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
+        tim::CircularBuffer<int> v(100);
+        tim::CircularBuffer<int>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
         assert(v.size() == 105);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);
@@ -36,10 +36,10 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        std::vector<int> v(100);
+        tim::CircularBuffer<int> v(100);
         while(v.size() < v.capacity()) v.push_back(0); // force reallocation
         size_t sz = v.size();
-        std::vector<int>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
+        tim::CircularBuffer<int>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
         assert(v.size() == sz + 5);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);
@@ -52,10 +52,10 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        std::vector<int> v(100);
+        tim::CircularBuffer<int> v(100);
         v.reserve(128); // force no reallocation
         size_t sz = v.size();
-        std::vector<int>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
+        tim::CircularBuffer<int>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
         assert(v.size() == sz + 5);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);
@@ -68,8 +68,8 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        std::vector<int, limited_allocator<int, 300> > v(100);
-        std::vector<int, limited_allocator<int, 300> >::iterator i = v.insert(v.cbegin() + 10, 5, 1);
+        tim::CircularBuffer<int, limited_allocator<int, 300> > v(100);
+        tim::CircularBuffer<int, limited_allocator<int, 300> >::iterator i = v.insert(v.cbegin() + 10, 5, 1);
         assert(v.size() == 105);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);
@@ -83,8 +83,8 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 11
     {
-        std::vector<int, min_allocator<int>> v(100);
-        std::vector<int, min_allocator<int>>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
+        tim::CircularBuffer<int, min_allocator<int>> v(100);
+        tim::CircularBuffer<int, min_allocator<int>>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
         assert(v.size() == 105);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);
@@ -97,8 +97,8 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        std::vector<int, min_allocator<int>> v(100);
-        std::vector<int, min_allocator<int>>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
+        tim::CircularBuffer<int, min_allocator<int>> v(100);
+        tim::CircularBuffer<int, min_allocator<int>>::iterator i = v.insert(v.cbegin() + 10, 5, 1);
         assert(v.size() == 105);
         assert(is_contiguous_container_asan_correct(v));
         assert(i == v.begin() + 10);

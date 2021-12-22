@@ -10,7 +10,7 @@
 
 // template <class InputIter> vector(InputIter first, InputIter last);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 #include <cstddef>
 
@@ -38,40 +38,40 @@ void test(Iterator first, Iterator last) {
 static void basic_test_cases() {
   int a[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3, 1, 0};
   int* an = a + sizeof(a) / sizeof(a[0]);
-  test<std::vector<int> >(input_iterator<const int*>(a),
+  test<tim::CircularBuffer<int> >(input_iterator<const int*>(a),
                           input_iterator<const int*>(an));
-  test<std::vector<int> >(forward_iterator<const int*>(a),
+  test<tim::CircularBuffer<int> >(forward_iterator<const int*>(a),
                           forward_iterator<const int*>(an));
-  test<std::vector<int> >(bidirectional_iterator<const int*>(a),
+  test<tim::CircularBuffer<int> >(bidirectional_iterator<const int*>(a),
                           bidirectional_iterator<const int*>(an));
-  test<std::vector<int> >(random_access_iterator<const int*>(a),
+  test<tim::CircularBuffer<int> >(random_access_iterator<const int*>(a),
                           random_access_iterator<const int*>(an));
-  test<std::vector<int> >(a, an);
+  test<tim::CircularBuffer<int> >(a, an);
 
-  test<std::vector<int, limited_allocator<int, 63> > >(
+  test<tim::CircularBuffer<int, limited_allocator<int, 63> > >(
       input_iterator<const int*>(a), input_iterator<const int*>(an));
   // Add 1 for implementations that dynamically allocate a container proxy.
-  test<std::vector<int, limited_allocator<int, 18 + 1> > >(
+  test<tim::CircularBuffer<int, limited_allocator<int, 18 + 1> > >(
       forward_iterator<const int*>(a), forward_iterator<const int*>(an));
-  test<std::vector<int, limited_allocator<int, 18 + 1> > >(
+  test<tim::CircularBuffer<int, limited_allocator<int, 18 + 1> > >(
       bidirectional_iterator<const int*>(a),
       bidirectional_iterator<const int*>(an));
-  test<std::vector<int, limited_allocator<int, 18 + 1> > >(
+  test<tim::CircularBuffer<int, limited_allocator<int, 18 + 1> > >(
       random_access_iterator<const int*>(a),
       random_access_iterator<const int*>(an));
-  test<std::vector<int, limited_allocator<int, 18 + 1> > >(a, an);
+  test<tim::CircularBuffer<int, limited_allocator<int, 18 + 1> > >(a, an);
 #if TEST_STD_VER >= 11
-  test<std::vector<int, min_allocator<int> > >(input_iterator<const int*>(a),
+  test<tim::CircularBuffer<int, min_allocator<int> > >(input_iterator<const int*>(a),
                                                input_iterator<const int*>(an));
-  test<std::vector<int, min_allocator<int> > >(
+  test<tim::CircularBuffer<int, min_allocator<int> > >(
       forward_iterator<const int*>(a), forward_iterator<const int*>(an));
-  test<std::vector<int, min_allocator<int> > >(
+  test<tim::CircularBuffer<int, min_allocator<int> > >(
       bidirectional_iterator<const int*>(a),
       bidirectional_iterator<const int*>(an));
-  test<std::vector<int, min_allocator<int> > >(
+  test<tim::CircularBuffer<int, min_allocator<int> > >(
       random_access_iterator<const int*>(a),
       random_access_iterator<const int*>(an));
-  test<std::vector<int> >(a, an);
+  test<tim::CircularBuffer<int> >(a, an);
 #endif
 }
 
@@ -83,11 +83,11 @@ void emplaceable_concept_tests() {
     using T = EmplaceConstructible<int>;
     using It = forward_iterator<int*>;
     {
-      std::vector<T> v(It(arr1), It(std::end(arr1)));
+      tim::CircularBuffer<T> v(It(arr1), It(std::end(arr1)));
       assert(v[0].value == 42);
     }
     {
-      std::vector<T> v(It(arr2), It(std::end(arr2)));
+      tim::CircularBuffer<T> v(It(arr2), It(std::end(arr2)));
       assert(v[0].value == 1);
       assert(v[1].value == 101);
       assert(v[2].value == 42);
@@ -97,12 +97,12 @@ void emplaceable_concept_tests() {
     using T = EmplaceConstructibleAndMoveInsertable<int>;
     using It = input_iterator<int*>;
     {
-      std::vector<T> v(It(arr1), It(std::end(arr1)));
+      tim::CircularBuffer<T> v(It(arr1), It(std::end(arr1)));
       assert(v[0].copied == 0);
       assert(v[0].value == 42);
     }
     {
-      std::vector<T> v(It(arr2), It(std::end(arr2)));
+      tim::CircularBuffer<T> v(It(arr2), It(std::end(arr2)));
       //assert(v[0].copied == 0);
       assert(v[0].value == 1);
       //assert(v[1].copied == 0);
@@ -156,7 +156,7 @@ void test_ctor_with_different_value_type() {
     // Make sure initialization is performed with each element value, not with
     // a memory blob.
     float array[3] = {0.0f, 1.0f, 2.0f};
-    std::vector<int> v(array, array + 3);
+    tim::CircularBuffer<int> v(array, array + 3);
     assert(v[0] == 0);
     assert(v[1] == 1);
     assert(v[2] == 2);
@@ -166,13 +166,13 @@ void test_ctor_with_different_value_type() {
     Der *array[1] = { &z };
     // Though the types Der* and B2* are very similar, initialization still cannot
     // be done with `memcpy`.
-    std::vector<B2*> v(array, array + 1);
+    tim::CircularBuffer<B2*> v(array, array + 1);
     assert(v[0] == &z);
   }
   {
     // Though the types are different, initialization can be done with `memcpy`.
     int32_t array[1] = { -1 };
-    std::vector<uint32_t> v(array, array + 1);
+    tim::CircularBuffer<uint32_t> v(array, array + 1);
     assert(v[0] == 4294967295);
   }
 }

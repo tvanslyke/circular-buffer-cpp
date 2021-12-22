@@ -28,35 +28,33 @@
 //     typedef std::reverse_iterator<const_iterator>    const_reverse_iterator;
 // };
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <iterator>
 #include <type_traits>
 
 #include "test_macros.h"
 #include "test_allocator.h"
-#include "../../Copyable.h"
+#include "Copyable.h"
 #include "min_allocator.h"
 
-struct A { std::vector<A> v; }; // incomplete type support
+struct A { tim::CircularBuffer<A> v; }; // incomplete type support
 
 template <class T, class Allocator>
 void
 test()
 {
-    typedef std::vector<T, Allocator> C;
+    typedef tim::CircularBuffer<T, Allocator> C;
 
 //  TODO: These tests should use allocator_traits to get stuff, rather than
 //  blindly pulling typedefs out of the allocator. This is why we can't call
 //  test<int, min_allocator<int>>() below.
     static_assert((std::is_same<typename C::value_type, T>::value), "");
-    static_assert((std::is_same<typename C::value_type, typename Allocator::value_type>::value), "");
+    static_assert((std::is_same<typename C::value_type, typename std::allocator_traits<Allocator>::value_type>::value), "");
     static_assert((std::is_same<typename C::allocator_type, Allocator>::value), "");
-    static_assert((std::is_same<typename C::size_type, typename Allocator::size_type>::value), "");
-    static_assert((std::is_same<typename C::difference_type, typename Allocator::difference_type>::value), "");
-    static_assert((std::is_same<typename C::reference, typename Allocator::reference>::value), "");
-    static_assert((std::is_same<typename C::const_reference, typename Allocator::const_reference>::value), "");
-    static_assert((std::is_same<typename C::pointer, typename Allocator::pointer>::value), "");
-    static_assert((std::is_same<typename C::const_pointer, typename Allocator::const_pointer>::value), "");
+    static_assert((std::is_same<typename C::size_type, typename std::allocator_traits<Allocator>::size_type>::value), "");
+    static_assert((std::is_same<typename C::difference_type, typename std::allocator_traits<Allocator>::difference_type>::value), "");
+    static_assert((std::is_same<typename C::pointer, typename std::allocator_traits<Allocator>::pointer>::value), "");
+    static_assert((std::is_same<typename C::const_pointer, typename std::allocator_traits<Allocator>::const_pointer>::value), "");
 
     static_assert((std::is_signed<typename C::difference_type>::value), "");
     static_assert((std::is_unsigned<typename C::size_type>::value), "");
@@ -84,12 +82,12 @@ int main(int, char**)
     test<int, test_allocator<int> >();
     test<int*, std::allocator<int*> >();
     test<Copyable, test_allocator<Copyable> >();
-    static_assert((std::is_same<std::vector<char>::allocator_type,
+    static_assert((std::is_same<tim::CircularBuffer<char>::allocator_type,
                                 std::allocator<char> >::value), "");
 #if TEST_STD_VER >= 11
     {
 
-    typedef std::vector<int, min_allocator<int> > C;
+    typedef tim::CircularBuffer<int, min_allocator<int> > C;
     static_assert((std::is_same<C::value_type, int>::value), "");
     static_assert((std::is_same<C::allocator_type, min_allocator<int> >::value), "");
     static_assert((std::is_same<C::reference, int&>::value), "");

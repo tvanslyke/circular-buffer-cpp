@@ -10,7 +10,7 @@
 
 // void shrink_to_fit();
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 #include "test_macros.h"
 #include "test_allocator.h"
@@ -20,7 +20,7 @@
 int main(int, char**)
 {
     {
-        std::vector<int> v(100);
+        tim::CircularBuffer<int> v(100);
         v.push_back(1);
         assert(is_contiguous_container_asan_correct(v));
         v.shrink_to_fit();
@@ -29,7 +29,7 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(v));
     }
     {
-        std::vector<int, limited_allocator<int, 401> > v(100);
+        tim::CircularBuffer<int, limited_allocator<int, 401> > v(100);
         v.push_back(1);
         assert(is_contiguous_container_asan_correct(v));
         v.shrink_to_fit();
@@ -39,7 +39,7 @@ int main(int, char**)
     }
 #ifndef _LIBCPP_NO_EXCEPTIONS
     {
-        std::vector<int, limited_allocator<int, 400> > v(100);
+        tim::CircularBuffer<int, limited_allocator<int, 400> > v(100);
         v.push_back(1);
         assert(is_contiguous_container_asan_correct(v));
         v.shrink_to_fit();
@@ -50,7 +50,7 @@ int main(int, char**)
 #endif
 #if TEST_STD_VER >= 11
     {
-        std::vector<int, min_allocator<int>> v(100);
+        tim::CircularBuffer<int, min_allocator<int>> v(100);
         v.push_back(1);
         assert(is_contiguous_container_asan_correct(v));
         v.shrink_to_fit();

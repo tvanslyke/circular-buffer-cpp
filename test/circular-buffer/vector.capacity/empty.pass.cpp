@@ -12,7 +12,7 @@
 
 // bool empty() const noexcept;
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -21,7 +21,7 @@
 int main(int, char**)
 {
     {
-    typedef std::vector<int> C;
+    typedef tim::CircularBuffer<int> C;
     C c;
     ASSERT_NOEXCEPT(c.empty());
     assert(c.empty());
@@ -32,7 +32,7 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 11
     {
-    typedef std::vector<int, min_allocator<int>> C;
+    typedef tim::CircularBuffer<int, min_allocator<int>> C;
     C c;
     ASSERT_NOEXCEPT(c.empty());
     assert(c.empty());

@@ -15,7 +15,7 @@
 // delete their move constructor. Such types don't meet the Cpp17CopyInsertible
 // requirements.
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 
 template <int>
 class BadUserNoCookie {
@@ -34,11 +34,11 @@ int main() {
   // expected-error@memory:* 0-2 {{call to deleted constructor}}
   {
 
-    std::vector<BadUserNoCookie<1> > x;
+    tim::CircularBuffer<BadUserNoCookie<1> > x;
     x.emplace_back();
   }
   {
-    std::vector<BadUserNoCookie<2>> x;
+    tim::CircularBuffer<BadUserNoCookie<2>> x;
     BadUserNoCookie<2> c;
     x.push_back(c);
   }

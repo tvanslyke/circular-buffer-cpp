@@ -12,7 +12,7 @@
 
 // template <class... Args> iterator emplace(const_iterator pos, Args&&... args);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -55,8 +55,8 @@ public:
 int main(int, char**)
 {
     {
-        std::vector<A> c;
-        std::vector<A>::iterator i = c.emplace(c.cbegin(), 2, 3.5);
+        tim::CircularBuffer<A> c;
+        tim::CircularBuffer<A>::iterator i = c.emplace(c.cbegin(), 2, 3.5);
         assert(i == c.begin());
         assert(c.size() == 1);
         assert(c.front().geti() == 2);
@@ -82,8 +82,8 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(c));
     }
     {
-        std::vector<A, limited_allocator<A, 7> > c;
-        std::vector<A, limited_allocator<A, 7> >::iterator i = c.emplace(c.cbegin(), 2, 3.5);
+        tim::CircularBuffer<A, limited_allocator<A, 7> > c;
+        tim::CircularBuffer<A, limited_allocator<A, 7> >::iterator i = c.emplace(c.cbegin(), 2, 3.5);
         assert(i == c.begin());
         assert(c.size() == 1);
         assert(c.front().geti() == 2);
@@ -109,8 +109,8 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(c));
     }
     {
-        std::vector<A, min_allocator<A>> c;
-        std::vector<A, min_allocator<A>>::iterator i = c.emplace(c.cbegin(), 2, 3.5);
+        tim::CircularBuffer<A, min_allocator<A>> c;
+        tim::CircularBuffer<A, min_allocator<A>>::iterator i = c.emplace(c.cbegin(), 2, 3.5);
         assert(i == c.begin());
         assert(c.size() == 1);
         assert(c.front().geti() == 2);

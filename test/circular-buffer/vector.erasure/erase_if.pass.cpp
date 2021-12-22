@@ -12,7 +12,7 @@
 // template <class T, class Allocator, class Predicate>
 //   void erase_if(vector<T, Allocator>& c, Predicate pred);  
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 
 #include "test_macros.h"
 #include "test_allocator.h"
@@ -22,8 +22,8 @@ template <class S, class Pred>
 void
 test0(S s, Pred p, S expected)
 {
-    ASSERT_SAME_TYPE(void, decltype(std::erase_if(s, p)));
-    std::erase_if(s, p);
+    ASSERT_SAME_TYPE(typename S::size_type, decltype(tim::erase_if(s, p)));
+    tim::erase_if(s, p);
     assert(s == expected);
 }
 
@@ -68,12 +68,12 @@ void test()
 
 int main(int, char**)
 {
-    test<std::vector<int>>();
-    test<std::vector<int, min_allocator<int>>> ();
-    test<std::vector<int, test_allocator<int>>> ();
+    test<tim::CircularBuffer<int>>();
+    test<tim::CircularBuffer<int, min_allocator<int>>> ();
+    test<tim::CircularBuffer<int, test_allocator<int>>> ();
 
-    test<std::vector<long>>();
-    test<std::vector<double>>();
+    test<tim::CircularBuffer<long>>();
+    test<tim::CircularBuffer<double>>();
 
   return 0;
 }

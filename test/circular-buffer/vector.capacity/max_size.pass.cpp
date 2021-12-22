@@ -13,7 +13,7 @@
 #include <cassert>
 #include <limits>
 #include <type_traits>
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 
 #include "test_allocator.h"
 #include "test_macros.h"
@@ -22,14 +22,14 @@
 int main(int, char**) {
   {
     typedef limited_allocator<int, 10> A;
-    typedef std::vector<int, A> C;
+    typedef tim::CircularBuffer<int, A> C;
     C c;
     assert(c.max_size() <= 10);
     LIBCPP_ASSERT(c.max_size() == 10);
   }
   {
     typedef limited_allocator<int, (size_t)-1> A;
-    typedef std::vector<int, A> C;
+    typedef tim::CircularBuffer<int, A> C;
     const C::size_type max_dist =
         static_cast<C::size_type>(std::numeric_limits<C::difference_type>::max());
     C c;
@@ -37,7 +37,7 @@ int main(int, char**) {
     LIBCPP_ASSERT(c.max_size() == max_dist);
   }
   {
-    typedef std::vector<char> C;
+    typedef tim::CircularBuffer<char> C;
     const C::size_type max_dist =
         static_cast<C::size_type>(std::numeric_limits<C::difference_type>::max());
     C c;

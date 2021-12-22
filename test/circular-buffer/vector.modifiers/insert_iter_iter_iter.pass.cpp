@@ -11,7 +11,7 @@
 // template <class Iter>
 //   iterator insert(const_iterator position, Iter first, Iter last);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 #include <cstddef>
 
@@ -24,7 +24,7 @@
 int main(int, char**)
 {
     {
-        typedef std::vector<int> V;
+        typedef tim::CircularBuffer<int> V;
         V v(100);
         int a[] = {1, 2, 3, 4, 5};
         const int N = sizeof(a)/sizeof(a[0]);
@@ -42,7 +42,7 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        typedef std::vector<int> V;
+        typedef tim::CircularBuffer<int> V;
         V v(100);
         int a[] = {1, 2, 3, 4, 5};
         const int N = sizeof(a)/sizeof(a[0]);
@@ -60,7 +60,7 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        typedef std::vector<int> V;
+        typedef tim::CircularBuffer<int> V;
         V v(100);
         while(v.size() < v.capacity()) v.push_back(0); // force reallocation
         size_t sz = v.size();
@@ -79,7 +79,7 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        typedef std::vector<int> V;
+        typedef tim::CircularBuffer<int> V;
         V v(100);
         v.reserve(128); // force no reallocation
         size_t sz = v.size();
@@ -98,7 +98,7 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        typedef std::vector<int, limited_allocator<int, 308> > V;
+        typedef tim::CircularBuffer<int, limited_allocator<int, 308> > V;
         V v(100);
         int a[] = {1, 2, 3, 4, 5};
         const int N = sizeof(a)/sizeof(a[0]);
@@ -116,7 +116,7 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        typedef std::vector<int, limited_allocator<int, 300> > V;
+        typedef tim::CircularBuffer<int, limited_allocator<int, 300> > V;
         V v(100);
         int a[] = {1, 2, 3, 4, 5};
         const int N = sizeof(a)/sizeof(a[0]);
@@ -135,7 +135,7 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 11
     {
-        typedef std::vector<int, min_allocator<int> > V;
+        typedef tim::CircularBuffer<int, min_allocator<int> > V;
         V v(100);
         int a[] = {1, 2, 3, 4, 5};
         const int N = sizeof(a)/sizeof(a[0]);
@@ -153,7 +153,7 @@ int main(int, char**)
             assert(v[j] == 0);
     }
     {
-        typedef std::vector<int, min_allocator<int> > V;
+        typedef tim::CircularBuffer<int, min_allocator<int> > V;
         V v(100);
         int a[] = {1, 2, 3, 4, 5};
         const int N = sizeof(a)/sizeof(a[0]);

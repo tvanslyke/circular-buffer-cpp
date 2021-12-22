@@ -6,14 +6,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-// <vector>
-//   The container's value type must be the same as the allocator's value type
+#ifndef COPYABLE_H
+#define COPYABLE_H
 
-#include "tim/circular-buffer/CircularBuffer.hpp"
-
-int main(int, char**)
+class Copyable
 {
-    tim::CircularBuffer<int, std::allocator<long> > v;
+public:
+};
 
-  return 0;
-}
+#endif  // COPYABLE_H

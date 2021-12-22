@@ -10,7 +10,7 @@
 
 // void assign(size_type n, const_reference v);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <algorithm>
 #include <cassert>
 
@@ -32,7 +32,7 @@ void test ( Vec &v )
 int main(int, char**)
 {
     {
-    typedef std::vector<int> V;
+    typedef tim::CircularBuffer<int> V;
     V d1;
     V d2;
     d2.reserve(10);  // no reallocation during assign.
@@ -42,7 +42,7 @@ int main(int, char**)
 
 #if TEST_STD_VER >= 11
     {
-    typedef std::vector<int, min_allocator<int>> V;
+    typedef tim::CircularBuffer<int, min_allocator<int>> V;
     V d1;
     V d2;
     d2.reserve(10);  // no reallocation during assign.

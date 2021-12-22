@@ -10,7 +10,7 @@
 
 // iterator erase(const_iterator position);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <iterator>
 #include <cassert>
 
@@ -35,13 +35,14 @@ bool Throws::sThrows = false;
 
 int main(int, char**)
 {
+    using namespace std;
     {
     int a1[] = {1, 2, 3};
-    std::vector<int> l1(a1, a1+3);
-    std::vector<int>::const_iterator i = l1.begin();
+    tim::CircularBuffer<int> l1(a1, a1+3);
+    tim::CircularBuffer<int>::const_iterator i = l1.begin();
     assert(is_contiguous_container_asan_correct(l1));
     ++i;
-    std::vector<int>::iterator j = l1.erase(i);
+    tim::CircularBuffer<int>::iterator j = l1.erase(i);
     assert(l1.size() == 2);
     assert(distance(l1.begin(), l1.end()) == 2);
     assert(*j == 3);
@@ -63,11 +64,11 @@ int main(int, char**)
 #if TEST_STD_VER >= 11
     {
     int a1[] = {1, 2, 3};
-    std::vector<int, min_allocator<int>> l1(a1, a1+3);
-    std::vector<int, min_allocator<int>>::const_iterator i = l1.begin();
+    tim::CircularBuffer<int, min_allocator<int>> l1(a1, a1+3);
+    tim::CircularBuffer<int, min_allocator<int>>::const_iterator i = l1.begin();
     assert(is_contiguous_container_asan_correct(l1));
     ++i;
-    std::vector<int, min_allocator<int>>::iterator j = l1.erase(i);
+    tim::CircularBuffer<int, min_allocator<int>>::iterator j = l1.erase(i);
     assert(l1.size() == 2);
     assert(distance(l1.begin(), l1.end()) == 2);
     assert(*j == 3);
@@ -92,7 +93,7 @@ int main(int, char**)
 // Throws: Nothing unless an exception is thrown by the assignment operator or move assignment operator of T.
     {
     Throws arr[] = {1, 2, 3};
-    std::vector<Throws> v(arr, arr+3);
+    tim::CircularBuffer<Throws> v(arr, arr+3);
     Throws::sThrows = true;
     v.erase(v.begin());
     v.erase(--v.end());

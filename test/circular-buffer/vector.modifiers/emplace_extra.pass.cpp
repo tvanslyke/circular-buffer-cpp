@@ -12,7 +12,7 @@
 
 // template <class... Args> iterator emplace(const_iterator pos, Args&&... args);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -22,7 +22,7 @@
 int main(int, char**)
 {
     {
-        std::vector<int> v;
+        tim::CircularBuffer<int> v;
         v.reserve(3);
         assert(is_contiguous_container_asan_correct(v));
         v = { 1, 2, 3 };
@@ -31,7 +31,7 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(v));
     }
     {
-        std::vector<int> v;
+        tim::CircularBuffer<int> v;
         v.reserve(4);
         assert(is_contiguous_container_asan_correct(v));
         v = { 1, 2, 3 };
@@ -40,7 +40,7 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(v));
     }
     {
-        std::vector<int, min_allocator<int>> v;
+        tim::CircularBuffer<int, min_allocator<int>> v;
         v.reserve(3);
         assert(is_contiguous_container_asan_correct(v));
         v = { 1, 2, 3 };
@@ -49,7 +49,7 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(v));
     }
     {
-        std::vector<int, min_allocator<int>> v;
+        tim::CircularBuffer<int, min_allocator<int>> v;
         v.reserve(4);
         assert(is_contiguous_container_asan_correct(v));
         v = { 1, 2, 3 };

@@ -10,7 +10,7 @@
 
 // void push_back(const value_type& x);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "asan_testing.h"
@@ -67,10 +67,10 @@ bool operator==(const CMyClass &lhs, const CMyClass &rhs) { return lhs.equal(rhs
 int main(int, char**)
 {
     CMyClass instance(42);
-    std::vector<CMyClass> vec;
+    tim::CircularBuffer<CMyClass> vec;
 
     vec.push_back(instance);
-    std::vector<CMyClass> vec2(vec);
+    tim::CircularBuffer<CMyClass> vec2(vec);
     assert(is_contiguous_container_asan_correct(vec));
     assert(is_contiguous_container_asan_correct(vec2));
 

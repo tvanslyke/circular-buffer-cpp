@@ -10,7 +10,7 @@
 
 // void swap(vector& x);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -20,8 +20,8 @@
 int main(int, char**)
 {
     {
-        std::vector<int> v1(100);
-        std::vector<int> v2(200);
+        tim::CircularBuffer<int> v1(100);
+        tim::CircularBuffer<int> v2(200);
         assert(is_contiguous_container_asan_correct(v1));
         assert(is_contiguous_container_asan_correct(v2));
         v1.swap(v2);
@@ -34,8 +34,8 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 11
     {
-        std::vector<int, min_allocator<int>> v1(100);
-        std::vector<int, min_allocator<int>> v2(200);
+        tim::CircularBuffer<int, min_allocator<int>> v1(100);
+        tim::CircularBuffer<int, min_allocator<int>> v2(200);
         assert(is_contiguous_container_asan_correct(v1));
         assert(is_contiguous_container_asan_correct(v2));
         v1.swap(v2);

@@ -20,7 +20,7 @@
 
 // This tests a conforming extension
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <utility>
 #include <cassert>
 
@@ -56,21 +56,21 @@ struct some_alloc2
 int main(int, char**)
 {
     {
-        typedef std::vector<MoveOnly> C;
+        typedef tim::CircularBuffer<MoveOnly> C;
         static_assert(noexcept(swap(std::declval<C&>(), std::declval<C&>())), "");
     }
 #if defined(_LIBCPP_VERSION)
     {
-        typedef std::vector<MoveOnly, test_allocator<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly>> C;
         static_assert(noexcept(swap(std::declval<C&>(), std::declval<C&>())), "");
     }
 #endif // _LIBCPP_VERSION
     {
-        typedef std::vector<MoveOnly, other_allocator<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly>> C;
         static_assert(noexcept(swap(std::declval<C&>(), std::declval<C&>())), "");
     }
     {
-        typedef std::vector<MoveOnly, some_alloc<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, some_alloc<MoveOnly>> C;
 #if TEST_STD_VER >= 14
     //  In C++14, if POCS is set, swapping the allocator is required not to throw
         static_assert( noexcept(swap(std::declval<C&>(), std::declval<C&>())), "");
@@ -80,7 +80,7 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 14
     {
-        typedef std::vector<MoveOnly, some_alloc2<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, some_alloc2<MoveOnly>> C;
     //  if the allocators are always equal, then the swap can be noexcept
         static_assert( noexcept(swap(std::declval<C&>(), std::declval<C&>())), "");
     }

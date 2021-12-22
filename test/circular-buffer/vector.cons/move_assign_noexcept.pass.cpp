@@ -17,7 +17,7 @@
 
 // UNSUPPORTED: c++98, c++03
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -61,19 +61,19 @@ struct some_alloc3
 int main(int, char**)
 {
     {
-        typedef std::vector<MoveOnly> C;
+        typedef tim::CircularBuffer<MoveOnly> C;
         static_assert(std::is_nothrow_move_assignable<C>::value, "");
     }
     {
-        typedef std::vector<MoveOnly, test_allocator<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly>> C;
         static_assert(!std::is_nothrow_move_assignable<C>::value, "");
     }
     {
-        typedef std::vector<MoveOnly, other_allocator<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly>> C;
         static_assert(std::is_nothrow_move_assignable<C>::value, "");
     }
     {
-        typedef std::vector<MoveOnly, some_alloc<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, some_alloc<MoveOnly>> C;
     //  In C++17, move assignment for allocators are not allowed to throw
 #if TEST_STD_VER > 14
         static_assert( std::is_nothrow_move_assignable<C>::value, "");
@@ -84,11 +84,11 @@ int main(int, char**)
 
 #if TEST_STD_VER > 14
     {  // POCMA false, is_always_equal true
-        typedef std::vector<MoveOnly, some_alloc2<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, some_alloc2<MoveOnly>> C;
         static_assert( std::is_nothrow_move_assignable<C>::value, "");
     }
     {  // POCMA false, is_always_equal false
-        typedef std::vector<MoveOnly, some_alloc3<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, some_alloc3<MoveOnly>> C;
         static_assert(!std::is_nothrow_move_assignable<C>::value, "");
     }
 #endif

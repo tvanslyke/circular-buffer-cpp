@@ -12,7 +12,7 @@
 
 // void assign(initializer_list<value_type> il);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -34,7 +34,7 @@ void test ( Vec &v )
 int main(int, char**)
 {
     {
-    typedef std::vector<int> V;
+    typedef tim::CircularBuffer<int> V;
     V d1;
     V d2;
     d2.reserve(10);  // no reallocation during assign.
@@ -42,7 +42,7 @@ int main(int, char**)
     test(d2);
     }
     {
-    typedef std::vector<int, min_allocator<int>> V;
+    typedef tim::CircularBuffer<int, min_allocator<int>> V;
     V d1;
     V d2;
     d2.reserve(10);  // no reallocation during assign.

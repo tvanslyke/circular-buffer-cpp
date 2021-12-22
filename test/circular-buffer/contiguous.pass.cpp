@@ -10,7 +10,7 @@
 
 // An vector is a contiguous container
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -28,7 +28,7 @@ int main(int, char**)
 {
     {
     typedef int T;
-    typedef std::vector<T> C;
+    typedef tim::CircularBuffer<T> C;
     test_contiguous(C());
     test_contiguous(C(3, 5));
     }
@@ -36,7 +36,7 @@ int main(int, char**)
     {
     typedef double T;
     typedef test_allocator<T> A;
-    typedef std::vector<T, A> C;
+    typedef tim::CircularBuffer<T, A> C;
     test_contiguous(C(A(3)));
     test_contiguous(C(7, 9.0, A(5)));
     }
@@ -44,7 +44,7 @@ int main(int, char**)
     {
     typedef double T;
     typedef min_allocator<T> A;
-    typedef std::vector<T, A> C;
+    typedef tim::CircularBuffer<T, A> C;
     test_contiguous(C(A{}));
     test_contiguous(C(9, 11.0, A{}));
     }

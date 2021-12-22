@@ -10,7 +10,7 @@
 
 // iterator erase(const_iterator first, const_iterator last);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <iterator>
 #include <cassert>
 
@@ -35,47 +35,48 @@ bool Throws::sThrows = false;
 
 int main(int, char**)
 {
+    using namespace std;
     int a1[] = {1, 2, 3};
     {
-        std::vector<int> l1(a1, a1+3);
+        tim::CircularBuffer<int> l1(a1, a1+3);
         assert(is_contiguous_container_asan_correct(l1));
-        std::vector<int>::iterator i = l1.erase(l1.cbegin(), l1.cbegin());
+        tim::CircularBuffer<int>::iterator i = l1.erase(l1.cbegin(), l1.cbegin());
         assert(l1.size() == 3);
         assert(distance(l1.cbegin(), l1.cend()) == 3);
         assert(i == l1.begin());
         assert(is_contiguous_container_asan_correct(l1));
     }
     {
-        std::vector<int> l1(a1, a1+3);
+        tim::CircularBuffer<int> l1(a1, a1+3);
         assert(is_contiguous_container_asan_correct(l1));
-        std::vector<int>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin()));
+        tim::CircularBuffer<int>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin()));
         assert(l1.size() == 2);
         assert(distance(l1.cbegin(), l1.cend()) == 2);
         assert(i == l1.begin());
-        assert(l1 == std::vector<int>(a1+1, a1+3));
+        assert(l1 == tim::CircularBuffer<int>(a1+1, a1+3));
         assert(is_contiguous_container_asan_correct(l1));
     }
     {
-        std::vector<int> l1(a1, a1+3);
+        tim::CircularBuffer<int> l1(a1, a1+3);
         assert(is_contiguous_container_asan_correct(l1));
-        std::vector<int>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin(), 2));
+        tim::CircularBuffer<int>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin(), 2));
         assert(l1.size() == 1);
         assert(distance(l1.cbegin(), l1.cend()) == 1);
         assert(i == l1.begin());
-        assert(l1 == std::vector<int>(a1+2, a1+3));
+        assert(l1 == tim::CircularBuffer<int>(a1+2, a1+3));
         assert(is_contiguous_container_asan_correct(l1));
     }
     {
-        std::vector<int> l1(a1, a1+3);
+        tim::CircularBuffer<int> l1(a1, a1+3);
         assert(is_contiguous_container_asan_correct(l1));
-        std::vector<int>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin(), 3));
+        tim::CircularBuffer<int>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin(), 3));
         assert(l1.size() == 0);
         assert(distance(l1.cbegin(), l1.cend()) == 0);
         assert(i == l1.begin());
         assert(is_contiguous_container_asan_correct(l1));
     }
     {
-        std::vector<std::vector<int> > outer(2, std::vector<int>(1));
+        tim::CircularBuffer<tim::CircularBuffer<int> > outer(2, tim::CircularBuffer<int>(1));
         assert(is_contiguous_container_asan_correct(outer));
         assert(is_contiguous_container_asan_correct(outer[0]));
         assert(is_contiguous_container_asan_correct(outer[1]));
@@ -89,45 +90,45 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 11
     {
-        std::vector<int, min_allocator<int>> l1(a1, a1+3);
+        tim::CircularBuffer<int, min_allocator<int>> l1(a1, a1+3);
         assert(is_contiguous_container_asan_correct(l1));
-        std::vector<int, min_allocator<int>>::iterator i = l1.erase(l1.cbegin(), l1.cbegin());
+        tim::CircularBuffer<int, min_allocator<int>>::iterator i = l1.erase(l1.cbegin(), l1.cbegin());
         assert(l1.size() == 3);
         assert(distance(l1.cbegin(), l1.cend()) == 3);
         assert(i == l1.begin());
         assert(is_contiguous_container_asan_correct(l1));
     }
     {
-        std::vector<int, min_allocator<int>> l1(a1, a1+3);
+        tim::CircularBuffer<int, min_allocator<int>> l1(a1, a1+3);
         assert(is_contiguous_container_asan_correct(l1));
-        std::vector<int, min_allocator<int>>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin()));
+        tim::CircularBuffer<int, min_allocator<int>>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin()));
         assert(l1.size() == 2);
         assert(distance(l1.cbegin(), l1.cend()) == 2);
         assert(i == l1.begin());
-        assert((l1 == std::vector<int, min_allocator<int>>(a1+1, a1+3)));
+        assert((l1 == tim::CircularBuffer<int, min_allocator<int>>(a1+1, a1+3)));
         assert(is_contiguous_container_asan_correct(l1));
     }
     {
-        std::vector<int, min_allocator<int>> l1(a1, a1+3);
+        tim::CircularBuffer<int, min_allocator<int>> l1(a1, a1+3);
         assert(is_contiguous_container_asan_correct(l1));
-        std::vector<int, min_allocator<int>>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin(), 2));
+        tim::CircularBuffer<int, min_allocator<int>>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin(), 2));
         assert(l1.size() == 1);
         assert(distance(l1.cbegin(), l1.cend()) == 1);
         assert(i == l1.begin());
-        assert((l1 == std::vector<int, min_allocator<int>>(a1+2, a1+3)));
+        assert((l1 == tim::CircularBuffer<int, min_allocator<int>>(a1+2, a1+3)));
         assert(is_contiguous_container_asan_correct(l1));
     }
     {
-        std::vector<int, min_allocator<int>> l1(a1, a1+3);
+        tim::CircularBuffer<int, min_allocator<int>> l1(a1, a1+3);
         assert(is_contiguous_container_asan_correct(l1));
-        std::vector<int, min_allocator<int>>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin(), 3));
+        tim::CircularBuffer<int, min_allocator<int>>::iterator i = l1.erase(l1.cbegin(), next(l1.cbegin(), 3));
         assert(l1.size() == 0);
         assert(distance(l1.cbegin(), l1.cend()) == 0);
         assert(i == l1.begin());
         assert(is_contiguous_container_asan_correct(l1));
     }
     {
-        std::vector<std::vector<int, min_allocator<int>>, min_allocator<std::vector<int, min_allocator<int>>>> outer(2, std::vector<int, min_allocator<int>>(1));
+        tim::CircularBuffer<tim::CircularBuffer<int, min_allocator<int>>, min_allocator<tim::CircularBuffer<int, min_allocator<int>>>> outer(2, tim::CircularBuffer<int, min_allocator<int>>(1));
         assert(is_contiguous_container_asan_correct(outer));
         assert(is_contiguous_container_asan_correct(outer[0]));
         assert(is_contiguous_container_asan_correct(outer[1]));
@@ -145,7 +146,7 @@ int main(int, char**)
 // Throws: Nothing unless an exception is thrown by the assignment operator or move assignment operator of T.
     {
     Throws arr[] = {1, 2, 3};
-    std::vector<Throws> v(arr, arr+3);
+    tim::CircularBuffer<Throws> v(arr, arr+3);
     Throws::sThrows = true;
     v.erase(v.begin(), --v.end());
     assert(v.size() == 1);

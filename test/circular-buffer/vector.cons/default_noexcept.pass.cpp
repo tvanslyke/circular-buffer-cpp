@@ -15,7 +15,7 @@
 // This *was* a conforming extension, but it was adopted in N4258.
 
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -32,19 +32,19 @@ struct some_alloc
 int main(int, char**)
 {
     {
-        typedef std::vector<MoveOnly> C;
+        typedef tim::CircularBuffer<MoveOnly> C;
         static_assert(std::is_nothrow_default_constructible<C>::value, "");
     }
     {
-        typedef std::vector<MoveOnly, test_allocator<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly>> C;
         static_assert(std::is_nothrow_default_constructible<C>::value, "");
     }
     {
-        typedef std::vector<MoveOnly, other_allocator<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly>> C;
         static_assert(!std::is_nothrow_default_constructible<C>::value, "");
     }
     {
-        typedef std::vector<MoveOnly, some_alloc<MoveOnly>> C;
+        typedef tim::CircularBuffer<MoveOnly, some_alloc<MoveOnly>> C;
         static_assert(!std::is_nothrow_default_constructible<C>::value, "");
     }
 

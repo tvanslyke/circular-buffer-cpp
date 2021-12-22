@@ -11,12 +11,12 @@
 // vector();
 // vector(const Alloc&);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
 #include "test_allocator.h"
-#include "../../../NotConstructible.h"
+#include "NotConstructible.h"
 #include "test_allocator.h"
 #include "min_allocator.h"
 #include "asan_testing.h"
@@ -63,38 +63,38 @@ test1(const typename C::allocator_type& a)
 int main(int, char**)
 {
     {
-    test0<std::vector<int> >();
-    test0<std::vector<NotConstructible> >();
-    test1<std::vector<int, test_allocator<int> > >(test_allocator<int>(3));
-    test1<std::vector<NotConstructible, test_allocator<NotConstructible> > >
+    test0<tim::CircularBuffer<int> >();
+    test0<tim::CircularBuffer<NotConstructible> >();
+    test1<tim::CircularBuffer<int, test_allocator<int> > >(test_allocator<int>(3));
+    test1<tim::CircularBuffer<NotConstructible, test_allocator<NotConstructible> > >
         (test_allocator<NotConstructible>(5));
     }
     {
-        std::vector<int, limited_allocator<int, 10> > v;
+        tim::CircularBuffer<int, limited_allocator<int, 10> > v;
         assert(v.empty());
     }
 #if TEST_STD_VER >= 11
     {
-    test0<std::vector<int, min_allocator<int>> >();
-    test0<std::vector<NotConstructible, min_allocator<NotConstructible>> >();
-    test1<std::vector<int, min_allocator<int> > >(min_allocator<int>{});
-    test1<std::vector<NotConstructible, min_allocator<NotConstructible> > >
+    test0<tim::CircularBuffer<int, min_allocator<int>> >();
+    test0<tim::CircularBuffer<NotConstructible, min_allocator<NotConstructible>> >();
+    test1<tim::CircularBuffer<int, min_allocator<int> > >(min_allocator<int>{});
+    test1<tim::CircularBuffer<NotConstructible, min_allocator<NotConstructible> > >
         (min_allocator<NotConstructible>{});
     }
     {
-        std::vector<int, min_allocator<int> > v;
+        tim::CircularBuffer<int, min_allocator<int> > v;
         assert(v.empty());
     }
 
     {
-    test0<std::vector<int, explicit_allocator<int>> >();
-    test0<std::vector<NotConstructible, explicit_allocator<NotConstructible>> >();
-    test1<std::vector<int, explicit_allocator<int> > >(explicit_allocator<int>{});
-    test1<std::vector<NotConstructible, explicit_allocator<NotConstructible> > >
+    test0<tim::CircularBuffer<int, explicit_allocator<int>> >();
+    test0<tim::CircularBuffer<NotConstructible, explicit_allocator<NotConstructible>> >();
+    test1<tim::CircularBuffer<int, explicit_allocator<int> > >(explicit_allocator<int>{});
+    test1<tim::CircularBuffer<NotConstructible, explicit_allocator<NotConstructible> > >
         (explicit_allocator<NotConstructible>{});
     }
     {
-        std::vector<int, explicit_allocator<int> > v;
+        tim::CircularBuffer<int, explicit_allocator<int> > v;
         assert(v.empty());
     }
 #endif

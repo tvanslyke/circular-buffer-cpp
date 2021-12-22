@@ -11,7 +11,7 @@
 // template <class InputIter> vector(InputIter first, InputIter last,
 //                                   const allocator_type& a);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 #include <cstddef>
 
@@ -54,34 +54,34 @@ void basic_tests() {
     int a[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3, 1, 0};
     int* an = a + sizeof(a) / sizeof(a[0]);
     std::allocator<int> alloc;
-    test<std::vector<int> >(input_iterator<const int*>(a),
+    test<tim::CircularBuffer<int> >(input_iterator<const int*>(a),
                             input_iterator<const int*>(an), alloc);
-    test<std::vector<int> >(forward_iterator<const int*>(a),
+    test<tim::CircularBuffer<int> >(forward_iterator<const int*>(a),
                             forward_iterator<const int*>(an), alloc);
-    test<std::vector<int> >(bidirectional_iterator<const int*>(a),
+    test<tim::CircularBuffer<int> >(bidirectional_iterator<const int*>(a),
                             bidirectional_iterator<const int*>(an), alloc);
-    test<std::vector<int> >(random_access_iterator<const int*>(a),
+    test<tim::CircularBuffer<int> >(random_access_iterator<const int*>(a),
                             random_access_iterator<const int*>(an), alloc);
-    test<std::vector<int> >(a, an, alloc);
+    test<tim::CircularBuffer<int> >(a, an, alloc);
   }
 #if TEST_STD_VER >= 11
   {
     int a[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3, 1, 0};
     int* an = a + sizeof(a) / sizeof(a[0]);
     min_allocator<int> alloc;
-    test<std::vector<int, min_allocator<int> > >(
+    test<tim::CircularBuffer<int, min_allocator<int> > >(
         input_iterator<const int*>(a), input_iterator<const int*>(an), alloc);
-    test<std::vector<int, min_allocator<int> > >(
+    test<tim::CircularBuffer<int, min_allocator<int> > >(
         forward_iterator<const int*>(a), forward_iterator<const int*>(an),
         alloc);
-    test<std::vector<int, min_allocator<int> > >(
+    test<tim::CircularBuffer<int, min_allocator<int> > >(
         bidirectional_iterator<const int*>(a),
         bidirectional_iterator<const int*>(an), alloc);
-    test<std::vector<int, min_allocator<int> > >(
+    test<tim::CircularBuffer<int, min_allocator<int> > >(
         random_access_iterator<const int*>(a),
         random_access_iterator<const int*>(an), alloc);
-    test<std::vector<int, min_allocator<int> > >(a, an, alloc);
-    test<std::vector<int, implicit_conv_allocator<int> > >(a, an, nullptr);
+    test<tim::CircularBuffer<int, min_allocator<int> > >(a, an, alloc);
+    test<tim::CircularBuffer<int, implicit_conv_allocator<int> > >(a, an, nullptr);
   }
 #endif
 }
@@ -96,11 +96,11 @@ void emplaceable_concept_tests() {
     using Alloc = std::allocator<T>;
     Alloc a;
     {
-      std::vector<T> v(It(arr1), It(std::end(arr1)), a);
+      tim::CircularBuffer<T> v(It(arr1), It(std::end(arr1)), a);
       assert(v[0].value == 42);
     }
     {
-      std::vector<T> v(It(arr2), It(std::end(arr2)), a);
+      tim::CircularBuffer<T> v(It(arr2), It(std::end(arr2)), a);
       assert(v[0].value == 1);
       assert(v[1].value == 101);
       assert(v[2].value == 42);
@@ -112,12 +112,12 @@ void emplaceable_concept_tests() {
     using Alloc = std::allocator<T>;
     Alloc a;
     {
-      std::vector<T> v(It(arr1), It(std::end(arr1)), a);
+      tim::CircularBuffer<T> v(It(arr1), It(std::end(arr1)), a);
       assert(v[0].copied == 0);
       assert(v[0].value == 42);
     }
     {
-      std::vector<T> v(It(arr2), It(std::end(arr2)), a);
+      tim::CircularBuffer<T> v(It(arr2), It(std::end(arr2)), a);
       assert(v[0].value == 1);
       assert(v[1].value == 101);
       assert(v[2].copied == 0);

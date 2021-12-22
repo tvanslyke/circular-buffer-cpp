@@ -21,7 +21,7 @@
 // const_reference back() const;
 // libc++ marks these as 'noexcept' (except 'at')
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "min_allocator.h"
@@ -40,7 +40,7 @@ make(int size, int start = 0)
 int main(int, char**)
 {
     {
-        typedef std::vector<int> C;
+        typedef tim::CircularBuffer<int> C;
         C c = make<C>(10);
         LIBCPP_ASSERT_NOEXCEPT(c[0]);
         LIBCPP_ASSERT_NOEXCEPT(c.front());
@@ -58,7 +58,7 @@ int main(int, char**)
         assert(c.back() == 9);
     }
     {
-        typedef std::vector<int> C;
+        typedef tim::CircularBuffer<int> C;
         const int N = 5;
         const C c = make<C>(10, N);
         LIBCPP_ASSERT_NOEXCEPT(c[0]);
@@ -78,7 +78,7 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 11
     {
-        typedef std::vector<int, min_allocator<int>> C;
+        typedef tim::CircularBuffer<int, min_allocator<int>> C;
         const int N = 34;
         C c = make<C>(10, N);
         LIBCPP_ASSERT_NOEXCEPT(c[0]);
@@ -97,7 +97,7 @@ int main(int, char**)
         assert(c.back() == N + 9);
     }
     {
-        typedef std::vector<int, min_allocator<int>> C;
+        typedef tim::CircularBuffer<int, min_allocator<int>> C;
         const int N = 23;
         const C c = make<C>(10, N);
         LIBCPP_ASSERT_NOEXCEPT(c[0]);

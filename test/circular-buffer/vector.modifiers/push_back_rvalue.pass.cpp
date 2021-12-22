@@ -12,7 +12,7 @@
 
 // void push_back(value_type&& x);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 #include <cstddef>
 #include "test_macros.h"
@@ -24,7 +24,7 @@
 int main(int, char**)
 {
     {
-        std::vector<MoveOnly> c;
+        tim::CircularBuffer<MoveOnly> c;
         c.push_back(MoveOnly(0));
         assert(c.size() == 1);
         assert(is_contiguous_container_asan_correct(c));
@@ -55,7 +55,7 @@ int main(int, char**)
         // libc++ needs 15 because it grows by 2x (1 + 2 + 4 + 8).
         // Use 17 for implementations that dynamically allocate a container proxy
         // and grow by 1.5x (1 for proxy + 1 + 2 + 3 + 4 + 6).
-        std::vector<MoveOnly, limited_allocator<MoveOnly, 17> > c;
+        tim::CircularBuffer<MoveOnly, limited_allocator<MoveOnly, 17> > c;
         c.push_back(MoveOnly(0));
         assert(c.size() == 1);
         assert(is_contiguous_container_asan_correct(c));
@@ -83,7 +83,7 @@ int main(int, char**)
             assert(c[j] == MoveOnly(j));
     }
     {
-        std::vector<MoveOnly, min_allocator<MoveOnly>> c;
+        tim::CircularBuffer<MoveOnly, min_allocator<MoveOnly>> c;
         c.push_back(MoveOnly(0));
         assert(c.size() == 1);
         assert(is_contiguous_container_asan_correct(c));

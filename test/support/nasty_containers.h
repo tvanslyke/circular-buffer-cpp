@@ -10,7 +10,7 @@
 #define NASTY_CONTAINERS_H
 
 #include <cassert>
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <list>
 
 #include "test_macros.h"
@@ -19,7 +19,7 @@ template <class T>
 class nasty_vector
 {
 public:
-    typedef typename std::vector<T>                           nested_container;
+    typedef typename tim::CircularBuffer<T>                           nested_container;
     typedef typename nested_container::value_type             value_type;
     typedef typename nested_container::reference              reference;
     typedef typename nested_container::const_reference        const_reference;

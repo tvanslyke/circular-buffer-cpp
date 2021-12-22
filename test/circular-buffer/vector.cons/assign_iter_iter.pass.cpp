@@ -10,7 +10,7 @@
 
 // void assign(size_type n, const_reference v);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <algorithm>
 #include <cassert>
 #include "test_macros.h"
@@ -31,12 +31,12 @@ void test_emplaceable_concept() {
     using T = EmplaceConstructibleMoveableAndAssignable<int>;
     using It = forward_iterator<int*>;
     {
-      std::vector<T> v;
+      tim::CircularBuffer<T> v;
       v.assign(It(arr1), It(std::end(arr1)));
       assert(v[0].value == 42);
     }
     {
-      std::vector<T> v;
+      tim::CircularBuffer<T> v;
       v.assign(It(arr2), It(std::end(arr2)));
       assert(v[0].value == 1);
       assert(v[1].value == 101);
@@ -47,13 +47,13 @@ void test_emplaceable_concept() {
     using T = EmplaceConstructibleMoveableAndAssignable<int>;
     using It = input_iterator<int*>;
     {
-      std::vector<T> v;
+      tim::CircularBuffer<T> v;
       v.assign(It(arr1), It(std::end(arr1)));
       assert(v[0].copied == 0);
       assert(v[0].value == 42);
     }
     {
-      std::vector<T> v;
+      tim::CircularBuffer<T> v;
       v.assign(It(arr2), It(std::end(arr2)));
       //assert(v[0].copied == 0);
       assert(v[0].value == 1);

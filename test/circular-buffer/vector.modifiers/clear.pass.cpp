@@ -10,7 +10,7 @@
 
 // void clear() noexcept;
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -21,7 +21,7 @@ int main(int, char**)
 {
     {
     int a[] = {1, 2, 3};
-    std::vector<int> c(a, a+3);
+    tim::CircularBuffer<int> c(a, a+3);
     ASSERT_NOEXCEPT(c.clear());
     c.clear();
     assert(c.empty());
@@ -31,7 +31,7 @@ int main(int, char**)
 #if TEST_STD_VER >= 11
     {
     int a[] = {1, 2, 3};
-    std::vector<int, min_allocator<int>> c(a, a+3);
+    tim::CircularBuffer<int, min_allocator<int>> c(a, a+3);
     ASSERT_NOEXCEPT(c.clear());
     c.clear();
     assert(c.empty());

@@ -30,7 +30,7 @@ int main(int, char**)
 //  Test the implicit deduction guides
     {
 //  vector (allocator &)
-    std::vector vec((std::allocator<int>()));  // expected-error {{no viable constructor or deduction guide for deduction of template arguments of 'vector'}}
+    tim::CircularBuffer vec((std::allocator<int>()));  // expected-error {{no viable constructor or deduction guide for deduction of template arguments of 'vector'}}
 //  Note: The extra parens are necessary, since otherwise clang decides it is a function declaration.
 //  Also, we can't use {} instead of parens, because that constructs a
 //      deque<allocator<int>, allocator<allocator<int>>>

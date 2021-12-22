@@ -13,7 +13,7 @@
 // template <class... Args> reference emplace_back(Args&&... args);
 // return type is 'reference' in C++17; 'void' before
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 #include "test_macros.h"
 #include "test_allocator.h"
@@ -56,7 +56,7 @@ public:
 int main(int, char**)
 {
     {
-        std::vector<A> c;
+        tim::CircularBuffer<A> c;
 #if TEST_STD_VER > 14
         A& r1 = c.emplace_back(2, 3.5);
         assert(c.size() == 1);
@@ -83,7 +83,7 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(c));
     }
     {
-        std::vector<A, limited_allocator<A, 4> > c;
+        tim::CircularBuffer<A, limited_allocator<A, 4> > c;
 #if TEST_STD_VER > 14
         A& r1 = c.emplace_back(2, 3.5);
         assert(c.size() == 1);
@@ -110,7 +110,7 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(c));
     }
     {
-        std::vector<A, min_allocator<A>> c;
+        tim::CircularBuffer<A, min_allocator<A>> c;
 #if TEST_STD_VER > 14
         A& r1 = c.emplace_back(2, 3.5);
         assert(c.size() == 1);
@@ -137,7 +137,7 @@ int main(int, char**)
         assert(is_contiguous_container_asan_correct(c));
     }
     {
-        std::vector<Tag_X, TaggingAllocator<Tag_X>> c;
+        tim::CircularBuffer<Tag_X, TaggingAllocator<Tag_X>> c;
         c.emplace_back();
         assert(c.size() == 1);
         c.emplace_back(1, 2, 3);
@@ -148,7 +148,7 @@ int main(int, char**)
     { // LWG 2164
         int arr[] = {0, 1, 2, 3, 4};
         int sz = 5;
-        std::vector<int> c(arr, arr+sz);
+        tim::CircularBuffer<int> c(arr, arr+sz);
         while (c.size() < c.capacity())
             c.push_back(sz++);
         c.emplace_back(c.front());

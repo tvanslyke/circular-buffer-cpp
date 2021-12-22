@@ -13,7 +13,7 @@
 //   void erase(vector<T, Allocator>& c, const U& value);
   
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <optional>
 
 #include "test_macros.h"
@@ -24,8 +24,8 @@ template <class S, class U>
 void
 test0(S s,  U val, S expected)
 {
-    ASSERT_SAME_TYPE(void, decltype(std::erase(s, val)));
-    std::erase(s, val);
+    ASSERT_SAME_TYPE(typename S::size_type, decltype(tim::erase(s, val)));
+    tim::erase(s, val);
     assert(s == expected);
 }
 
@@ -68,12 +68,12 @@ void test()
 
 int main(int, char**)
 {
-    test<std::vector<int>>();
-    test<std::vector<int, min_allocator<int>>> ();
-    test<std::vector<int, test_allocator<int>>> ();
+    test<tim::CircularBuffer<int>>();
+    test<tim::CircularBuffer<int, min_allocator<int>>> ();
+    test<tim::CircularBuffer<int, test_allocator<int>>> ();
 
-    test<std::vector<long>>();
-    test<std::vector<double>>();
+    test<tim::CircularBuffer<long>>();
+    test<tim::CircularBuffer<double>>();
 
   return 0;
 }

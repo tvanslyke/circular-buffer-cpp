@@ -12,7 +12,7 @@
 
 // vector(vector&& c);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -24,8 +24,8 @@
 int main(int, char**)
 {
     {
-        std::vector<MoveOnly, test_allocator<MoveOnly> > l(test_allocator<MoveOnly>(5));
-        std::vector<MoveOnly, test_allocator<MoveOnly> > lo(test_allocator<MoveOnly>(5));
+        tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly> > l(test_allocator<MoveOnly>(5));
+        tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly> > lo(test_allocator<MoveOnly>(5));
         assert(is_contiguous_container_asan_correct(l));
         assert(is_contiguous_container_asan_correct(lo));
         for (int i = 1; i <= 3; ++i)
@@ -35,15 +35,15 @@ int main(int, char**)
         }
         assert(is_contiguous_container_asan_correct(l));
         assert(is_contiguous_container_asan_correct(lo));
-        std::vector<MoveOnly, test_allocator<MoveOnly> > l2 = std::move(l);
+        tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly> > l2 = std::move(l);
         assert(l2 == lo);
         assert(l.empty());
         assert(l2.get_allocator() == lo.get_allocator());
         assert(is_contiguous_container_asan_correct(l2));
     }
     {
-        std::vector<MoveOnly, other_allocator<MoveOnly> > l(other_allocator<MoveOnly>(5));
-        std::vector<MoveOnly, other_allocator<MoveOnly> > lo(other_allocator<MoveOnly>(5));
+        tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly> > l(other_allocator<MoveOnly>(5));
+        tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly> > lo(other_allocator<MoveOnly>(5));
         assert(is_contiguous_container_asan_correct(l));
         assert(is_contiguous_container_asan_correct(lo));
         for (int i = 1; i <= 3; ++i)
@@ -53,7 +53,7 @@ int main(int, char**)
         }
         assert(is_contiguous_container_asan_correct(l));
         assert(is_contiguous_container_asan_correct(lo));
-        std::vector<MoveOnly, other_allocator<MoveOnly> > l2 = std::move(l);
+        tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly> > l2 = std::move(l);
         assert(l2 == lo);
         assert(l.empty());
         assert(l2.get_allocator() == lo.get_allocator());
@@ -61,18 +61,18 @@ int main(int, char**)
     }
     {
         int a1[] = {1, 3, 7, 9, 10};
-        std::vector<int> c1(a1, a1+sizeof(a1)/sizeof(a1[0]));
+        tim::CircularBuffer<int> c1(a1, a1+sizeof(a1)/sizeof(a1[0]));
         assert(is_contiguous_container_asan_correct(c1));
-        std::vector<int>::const_iterator i = c1.begin();
-        std::vector<int> c2 = std::move(c1);
+        tim::CircularBuffer<int>::const_iterator i = c1.begin();
+        tim::CircularBuffer<int> c2 = std::move(c1);
         assert(is_contiguous_container_asan_correct(c2));
-        std::vector<int>::iterator j = c2.erase(i);
+        tim::CircularBuffer<int>::iterator j = c2.erase(i);
         assert(*j == 3);
         assert(is_contiguous_container_asan_correct(c2));
     }
     {
-        std::vector<MoveOnly, min_allocator<MoveOnly> > l(min_allocator<MoveOnly>{});
-        std::vector<MoveOnly, min_allocator<MoveOnly> > lo(min_allocator<MoveOnly>{});
+        tim::CircularBuffer<MoveOnly, min_allocator<MoveOnly> > l(min_allocator<MoveOnly>{});
+        tim::CircularBuffer<MoveOnly, min_allocator<MoveOnly> > lo(min_allocator<MoveOnly>{});
         assert(is_contiguous_container_asan_correct(l));
         assert(is_contiguous_container_asan_correct(lo));
         for (int i = 1; i <= 3; ++i)
@@ -82,7 +82,7 @@ int main(int, char**)
         }
         assert(is_contiguous_container_asan_correct(l));
         assert(is_contiguous_container_asan_correct(lo));
-        std::vector<MoveOnly, min_allocator<MoveOnly> > l2 = std::move(l);
+        tim::CircularBuffer<MoveOnly, min_allocator<MoveOnly> > l2 = std::move(l);
         assert(l2 == lo);
         assert(l.empty());
         assert(l2.get_allocator() == lo.get_allocator());
@@ -90,18 +90,18 @@ int main(int, char**)
     }
     {
         int a1[] = {1, 3, 7, 9, 10};
-        std::vector<int, min_allocator<int>> c1(a1, a1+sizeof(a1)/sizeof(a1[0]));
+        tim::CircularBuffer<int, min_allocator<int>> c1(a1, a1+sizeof(a1)/sizeof(a1[0]));
         assert(is_contiguous_container_asan_correct(c1));
-        std::vector<int, min_allocator<int>>::const_iterator i = c1.begin();
-        std::vector<int, min_allocator<int>> c2 = std::move(c1);
+        tim::CircularBuffer<int, min_allocator<int>>::const_iterator i = c1.begin();
+        tim::CircularBuffer<int, min_allocator<int>> c2 = std::move(c1);
         assert(is_contiguous_container_asan_correct(c2));
-        std::vector<int, min_allocator<int>>::iterator j = c2.erase(i);
+        tim::CircularBuffer<int, min_allocator<int>>::iterator j = c2.erase(i);
         assert(*j == 3);
         assert(is_contiguous_container_asan_correct(c2));
     }
     {
       test_alloc_base::clear();
-      using Vect = std::vector<int, test_allocator<int> >;
+      using Vect = tim::CircularBuffer<int, test_allocator<int> >;
       Vect v(test_allocator<int>(42, 101));
       assert(test_alloc_base::count == 1);
       assert(test_alloc_base::copied == 1);

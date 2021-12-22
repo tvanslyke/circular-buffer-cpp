@@ -10,7 +10,7 @@
 
 // vector(size_type n, const value_type& x, const allocator_type& a);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 
 #include "test_macros.h"
@@ -33,9 +33,9 @@ test(typename C::size_type n, const typename C::value_type& x,
 
 int main(int, char**)
 {
-    test<std::vector<int> >(50, 3, std::allocator<int>());
+    test<tim::CircularBuffer<int> >(50, 3, std::allocator<int>());
 #if TEST_STD_VER >= 11
-    test<std::vector<int, min_allocator<int>> >(50, 3, min_allocator<int>());
+    test<tim::CircularBuffer<int, min_allocator<int>> >(50, 3, min_allocator<int>());
 #endif
 
   return 0;

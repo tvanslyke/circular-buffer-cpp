@@ -10,7 +10,7 @@
 
 // void reserve(size_type n);
 
-#include <vector>
+#include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
 #include "test_macros.h"
 #include "test_allocator.h"
@@ -20,13 +20,13 @@
 int main(int, char**)
 {
     {
-        std::vector<int> v;
+        tim::CircularBuffer<int> v;
         v.reserve(10);
         assert(v.capacity() >= 10);
         assert(is_contiguous_container_asan_correct(v));
     }
     {
-        std::vector<int> v(100);
+        tim::CircularBuffer<int> v(100);
         assert(v.capacity() == 100);
         v.reserve(50);
         assert(v.size() == 100);
@@ -38,7 +38,7 @@ int main(int, char**)
     }
     {
         // Add 1 for implementations that dynamically allocate a container proxy.
-        std::vector<int, limited_allocator<int, 250 + 1> > v(100);
+        tim::CircularBuffer<int, limited_allocator<int, 250 + 1> > v(100);
         assert(v.capacity() == 100);
         v.reserve(50);
         assert(v.size() == 100);
@@ -50,13 +50,13 @@ int main(int, char**)
     }
 #if TEST_STD_VER >= 11
     {
-        std::vector<int, min_allocator<int>> v;
+        tim::CircularBuffer<int, min_allocator<int>> v;
         v.reserve(10);
         assert(v.capacity() >= 10);
         assert(is_contiguous_container_asan_correct(v));
     }
     {
-        std::vector<int, min_allocator<int>> v(100);
+        tim::CircularBuffer<int, min_allocator<int>> v(100);
         assert(v.capacity() == 100);
         v.reserve(50);
         assert(v.size() == 100);
