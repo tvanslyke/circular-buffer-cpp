@@ -19,15 +19,19 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 if(CIRCULAR_BUFFER_ENABLE_TESTS)
 
 	function(AddFailingTest NAME SOURCES)
-		add_executable(test_${NAME} ${SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/include/tim/circular-buffer/CircularBuffer.natvis)
+		if(${MSVC})
+			add_executable(test_${NAME} ${SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/include/tim/circular-buffer/CircularBuffer.natvis)
+		else()
+			add_executable(test_${NAME} ${SOURCES})
+		endif()
 		target_compile_definitions(test_${NAME} PRIVATE TEST_STD_VER=${CXXSTD})
 		set_property(TARGET test_${NAME} PROPERTY CXX_STANDARD ${CXXSTD})
 		target_link_libraries(test_${NAME} circular-buffer-cpp)
 		target_include_directories(test_${NAME} PRIVATE ${PROJECT_SOURCE_DIR}/test/support)
 		if(MSVC)
-			target_compile_options(test_${NAME} PRIVATE /W4)
+			target_compile_options(test_${NAME} PRIVATE /W4 /WX)
 		else()
-			target_compile_options(test_${NAME} PRIVATE -Wall -Wextra -pedantic)
+			target_compile_options(test_${NAME} PRIVATE -Wall -Wextra -pedantic -Werror)
 		endif() 
 		set_target_properties(test_${NAME} PROPERTIES
 			EXCLUDE_FROM_ALL TRUE
@@ -40,27 +44,25 @@ if(CIRCULAR_BUFFER_ENABLE_TESTS)
 	endfunction(AddFailingTest)
 
 	function(AddPassingTest NAME SOURCES)
-		add_executable(test_${NAME} ${SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/include/tim/circular-buffer/CircularBuffer.natvis)
+		if(${MSVC})
+			add_executable(test_${NAME} ${SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/include/tim/circular-buffer/CircularBuffer.natvis)
+		else()
+			add_executable(test_${NAME} ${SOURCES})
+		endif()
 		target_compile_definitions(test_${NAME} PRIVATE TEST_STD_VER=${CXXSTD})
 		set_property(TARGET test_${NAME} PROPERTY CXX_STANDARD ${CXXSTD})
 		target_link_libraries(test_${NAME} circular-buffer-cpp)
 		target_include_directories(test_${NAME} PRIVATE ${PROJECT_SOURCE_DIR}/test/support)
 		if(MSVC)
-			target_compile_options(test_${NAME} PRIVATE /W4)
+			target_compile_options(test_${NAME} PRIVATE /W4 /WX)
 		else()
-			target_compile_options(test_${NAME} PRIVATE -Wall -Wextra -pedantic)
+			target_compile_options(test_${NAME} PRIVATE -Wall -Wextra -pedantic -Werror)
 		endif()
 		set_target_properties(test_${NAME} PROPERTIES LINKER_LANGUAGE CXX)
 		add_test(NAME ${NAME}
 			COMMAND ${CMAKE_BINARY_DIR}/bin/test_${NAME}
 			WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 	endfunction(AddPassingTest)
-
-	# Make test executable
-	# set(TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/tests/optional/main.cpp
-	# 	${CMAKE_CURRENT_SOURCE_DIR}/tests/optional/constructors.cpp)
-
-
 
 
 	# Tests that should fail to compile:
@@ -72,7 +74,6 @@ if(CIRCULAR_BUFFER_ENABLE_TESTS)
 	# Tests that should pass normally:
 
 	AddPassingTest(access_pass                                                 ${CMAKE_CURRENT_SOURCE_DIR}/test/circular-buffer/access.pass.cpp)
-	AddPassingTest(contiguous_pass                                             ${CMAKE_CURRENT_SOURCE_DIR}/test/circular-buffer/contiguous.pass.cpp)
 	AddPassingTest(iterators_pass                                              ${CMAKE_CURRENT_SOURCE_DIR}/test/circular-buffer/iterators.pass.cpp)
 	AddPassingTest(types_pass                                                  ${CMAKE_CURRENT_SOURCE_DIR}/test/circular-buffer/types.pass.cpp)
 	AddPassingTest(circular_buffer_capacity_capacity_pass                      ${CMAKE_CURRENT_SOURCE_DIR}/test/circular-buffer/vector.capacity/capacity.pass.cpp)
