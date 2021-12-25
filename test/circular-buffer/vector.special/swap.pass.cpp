@@ -21,6 +21,7 @@
 
 int main(int, char**)
 {
+    using namespace std;
     {
         int a1[] = {1, 3, 7, 9, 10};
         int a2[] = {0, 2, 4, 5, 6, 8, 11};

@@ -8,7 +8,7 @@
 
 // <vector>
 
-// void pop_back();
+// void pop_front();
 
 #include "tim/circular-buffer/CircularBuffer.hpp"
 #include <cassert>
@@ -24,7 +24,7 @@ int main(int, char**)
         tim::CircularBuffer<int> c;
         c.push_back(1);
         assert(c.size() == 1);
-        c.pop_back();
+        c.pop_front();
         assert(c.size() == 0);
 
     }
@@ -32,25 +32,25 @@ int main(int, char**)
         tim::CircularBuffer<int, min_allocator<int>> c;
         c.push_back(1);
         assert(c.size() == 1);
-        c.pop_back();
+        c.pop_front();
         assert(c.size() == 0);
     }
     {
         tim::CircularBuffer<int, min_allocator<int>> c;
         c = {0,1,2,3,4,5,6,7,8,9};
 	assert(c.size() == 10);
-	c.pop_back();
+	c.pop_front();
 	assert(c.size() == 9);
-	c.pop_back();
+	c.pop_front();
 	assert(c.size() == 8);
-	c.pop_back_n(2);
+	c.pop_front_n(2);
 	assert(c.size() == 6);
-	assert(c[5] == 5);
-	c.pop_back_n(5);
+	assert(c[0] == 4);
+	c.pop_front_n(5);
 	assert(c.size() == 1);
-	assert(c[0] == 0);
-	c.push_back(1);
-	c.pop_back_n(2);
+	assert(c[0] == 9);
+	c.push_front(8);
+	c.pop_front_n(2);
 	assert(c.size() == 0);
     }
     { // LWG 526

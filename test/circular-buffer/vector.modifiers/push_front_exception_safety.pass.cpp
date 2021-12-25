@@ -68,14 +68,13 @@ int main(int, char**)
 {
     CMyClass instance(42);
     tim::CircularBuffer<CMyClass> vec;
-
-    vec.push_back(instance);
     vec.reserve(2);
-    tim::CircularBuffer<CMyClass> vec2(vec);
 
+    vec.push_front(instance);
+    tim::CircularBuffer<CMyClass> vec2(vec);
     gCopyConstructorShouldThrow = true;
     try {
-        vec.push_back(instance);
+        vec.push_front(instance);
         assert(false);
     }
     catch (...) {
@@ -85,12 +84,11 @@ int main(int, char**)
     vec.shrink_to_fit();
     gCopyConstructorShouldThrow = true;
     try {
-        vec.push_back(instance);
+        vec.push_front(instance);
         assert(false);
     }
     catch (...) {
         assert(vec==vec2);
     }
-
   return 0;
 }

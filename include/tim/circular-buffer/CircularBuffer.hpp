@@ -1974,25 +1974,6 @@ public:
 		
 	}
 
-	constexpr CircularBuffer(shape_type shape, const CircularBuffer& other, const Allocator& al):
-		CircularBuffer(al)
-	{
-		assert(shape.capacity >= other.size());
-		assert(shape.start < shape.capacity);
-		data_ = allocate(shape.capacity);
-		start_ = shape.start;
-		for(auto r: other.get_ranges())
-		{
-			append_fast(r.begin(), r.end());
-		}
-	}
-
-	constexpr CircularBuffer(shape_type shape, const CircularBuffer& other):
-		CircularBuffer(shape, other, other.select_on_container_copy_construction())
-	{
-
-	}
-
 	constexpr CircularBuffer(CircularBuffer&& other) noexcept:
 		base_type(std::move(other.alloc())),
 		data_(std::exchange(other.data_, nullptr)),
@@ -2046,7 +2027,43 @@ public:
 	{
 
 	}
+#if 0
+	template <
+		class It,
+		std::enable_if_t<
+			std::is_convertible_v<
+				typename std::iterator_traits<It>::iterator_category, 
+				std::forward_iterator_tag
+			>,
+			bool
+		> = true 
+	>
+	constexpr CircularBuffer(shape_type shape, It first, It last, const Allocator& alloc = Allocator()):
+		CircularBuffer(shape, alloc)
+	{
+		size_type count = std::distance(first, last);
+		assert(capacity() >= count);
+		append_fast(first, last, count);
+	}
 
+	constexpr CircularBuffer(shape_type shape, const CircularBuffer& other, const Allocator& al):
+		CircularBuffer(al)
+	{
+		assert(shape.capacity >= other.size());
+		assert(shape.start < shape.capacity);
+		data_ = allocate(shape.capacity);
+		start_ = shape.start;
+		for(auto r: other.get_ranges())
+		{
+			append_fast(r.begin(), r.end());
+		}
+	}
+
+	constexpr CircularBuffer(shape_type shape, const CircularBuffer& other):
+		CircularBuffer(shape, other, other.select_on_container_copy_construction())
+	{
+
+	}
 
 	constexpr CircularBuffer(shape_type shape, CircularBuffer&& other, const Allocator& al):
 		CircularBuffer(al)
@@ -2067,26 +2084,25 @@ public:
 
 	}
 
-	constexpr CircularBuffer(std::initializer_list<T> init, const Allocator& alloc = Allocator()):
-		CircularBuffer(init.begin(), init.end(), alloc)
-	{
-
-	}
-	
 	constexpr CircularBuffer(shape_type shape, std::initializer_list<T> init, const Allocator& alloc = Allocator()):
 		CircularBuffer(shape, init.begin(), init.end(), alloc)
 	{
 
 	}
+#endif /* 0 */
 
-	
-		
 	constexpr CircularBuffer(shape_type shape, const Allocator& alloc) noexcept(std::is_nothrow_copy_constructible_v<Allocator>):
 		base_type(alloc)
 	{
 		assert(shape.start < shape.capacity);
 		initialize_allocation(shape.capacity);
 		start_ = shape.start;
+	}
+
+	constexpr CircularBuffer(std::initializer_list<T> init, const Allocator& alloc = Allocator()):
+		CircularBuffer(init.begin(), init.end(), alloc)
+	{
+
 	}
 
 	explicit CircularBuffer(size_type count, const value_type& value, const Allocator& alloc = Allocator()):
@@ -2127,7 +2143,7 @@ public:
 		CircularBuffer(alloc)
 	{
 		auto count = std::distance(first, last);
-		assert(count > 0);
+		assert(count >= 0);
 		assign_empty(first, last, static_cast<size_type>(count));
 	}
 
@@ -2145,24 +2161,6 @@ public:
 		CircularBuffer(alloc)
 	{
 		assign(first, last);
-	}
-
-	template <
-		class It,
-		std::enable_if_t<
-			std::is_convertible_v<
-				typename std::iterator_traits<It>::iterator_category, 
-				std::forward_iterator_tag
-			>,
-			bool
-		> = true 
-	>
-	constexpr CircularBuffer(shape_type shape, It first, It last, const Allocator& alloc = Allocator()):
-		CircularBuffer(shape, alloc)
-	{
-		size_type count = std::distance(first, last);
-		assert(capacity >= count);
-		assign_empty(first, last, count);
 	}
 
 	constexpr CircularBuffer(const CircularBuffer& other):
@@ -3495,7 +3493,7 @@ public:
 		}
 	}
 
-	friend constexpr void swap(CircularBuffer& l, CircularBuffer& r)
+	friend constexpr void swap(CircularBuffer& l, CircularBuffer& r) noexcept(propagate_on_container_swap || is_always_equal)
 	{
 		l.swap(r);
 	}
