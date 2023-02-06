@@ -9,7 +9,7 @@
 // <vector>
 
 // vector(vector&&)
-//        noexcept(is_nothrow_move_constructible<allocator_type>::value);
+//		noexcept(is_nothrow_move_constructible<allocator_type>::value);
 
 // This tests a conforming extension
 
@@ -25,33 +25,29 @@
 template <class T>
 struct some_alloc
 {
-    typedef T value_type;
-    some_alloc(const some_alloc&);
+	typedef T value_type;
+	some_alloc(const some_alloc&);
 };
 
 int main(int, char**)
 {
-    {
-        typedef tim::CircularBuffer<MoveOnly> C;
-        static_assert(std::is_nothrow_move_constructible<C>::value, "");
-    }
-    {
-        typedef tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly>> C;
-        static_assert(std::is_nothrow_move_constructible<C>::value, "");
-    }
-    {
-        typedef tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly>> C;
-        static_assert(std::is_nothrow_move_constructible<C>::value, "");
-    }
-    {
-        typedef tim::CircularBuffer<MoveOnly, some_alloc<MoveOnly>> C;
-    //  In C++17, move constructors for allocators are not allowed to throw
-#if TEST_STD_VER > 14
-        static_assert( std::is_nothrow_move_constructible<C>::value, "");
-#else
-        static_assert(!std::is_nothrow_move_constructible<C>::value, "");
-#endif
-    }
+	{
+		typedef tim::CircularBuffer<MoveOnly> C;
+		static_assert(std::is_nothrow_move_constructible<C>::value, "");
+	}
+	{
+		typedef tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly>> C;
+		static_assert(std::is_nothrow_move_constructible<C>::value, "");
+	}
+	{
+		typedef tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly>> C;
+		static_assert(std::is_nothrow_move_constructible<C>::value, "");
+	}
+	{
+		typedef tim::CircularBuffer<MoveOnly, some_alloc<MoveOnly>> C;
+		//  In C++17, move constructors for allocators are not allowed to throw
+		static_assert( std::is_nothrow_move_constructible<C>::value, "");
+	}
 
   return 0;
 }

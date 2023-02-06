@@ -13,7 +13,6 @@
 #error _LIBCPP_DEBUG must be defined before including this header
 #endif
 
-#include <ciso646>
 #ifndef _LIBCPP_VERSION
 #error "This header may only be used for libc++ tests"
 #endif

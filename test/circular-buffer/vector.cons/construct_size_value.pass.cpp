@@ -22,22 +22,20 @@ template <class C>
 void
 test(typename C::size_type n, const typename C::value_type& x)
 {
-    C c(n, x);
-    LIBCPP_ASSERT(c.__invariants());
-    assert(c.size() == n);
-    LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
-    for (typename C::const_iterator i = c.cbegin(), e = c.cend(); i != e; ++i)
-        assert(*i == x);
+	C c(n, x);
+	c._assert_invariants();
+	assert(c.size() == n);
+	LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
+	for (typename C::const_iterator i = c.cbegin(), e = c.cend(); i != e; ++i)
+		assert(*i == x);
 }
 
 int main(int, char**)
 {
-    test<tim::CircularBuffer<int> >(50, 3);
-    // Add 1 for implementations that dynamically allocate a container proxy.
-    test<tim::CircularBuffer<int, limited_allocator<int, 50 + 1> > >(50, 5);
-#if TEST_STD_VER >= 11
-    test<tim::CircularBuffer<int, min_allocator<int>> >(50, 3);
-#endif
+	test<tim::CircularBuffer<int> >(50, 3);
+	// Add 1 for implementations that dynamically allocate a container proxy.
+	test<tim::CircularBuffer<int, limited_allocator<int, 50 + 1> > >(50, 5);
+	test<tim::CircularBuffer<int, min_allocator<int>> >(50, 3);
 
-  return 0;
+	return 0;
 }

@@ -9,7 +9,6 @@
 #ifndef TEST_SUPPORT_CONTAINER_DEBUG_TESTS_H
 #define TEST_SUPPORT_CONTAINER_DEBUG_TESTS_H
 
-#include <ciso646>
 #ifndef _LIBCPP_VERSION
 #error This header may only be used for libc++ tests"
 #endif

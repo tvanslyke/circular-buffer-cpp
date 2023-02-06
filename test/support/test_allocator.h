@@ -124,6 +124,7 @@ public:
     pointer allocate(size_type n, const void* = 0)
         {
             assert(data_ >= 0);
+            assert(alloc_count >= 0);
             if (time_to_throw >= throw_after) {
 #ifndef TEST_HAS_NO_EXCEPTIONS
                 throw std::bad_alloc();
@@ -136,7 +137,7 @@ public:
             return (pointer)::operator new(n * sizeof(T));
         }
     void deallocate(pointer p, size_type)
-        {assert(data_ >= 0); --alloc_count; ::operator delete((void*)p);}
+        {assert(data_ >= 0); assert(alloc_count != 0); --alloc_count; ::operator delete((void*)p);}
     size_type max_size() const TEST_NOEXCEPT
         {return UINT_MAX / sizeof(T);}
 #if TEST_STD_VER < 11

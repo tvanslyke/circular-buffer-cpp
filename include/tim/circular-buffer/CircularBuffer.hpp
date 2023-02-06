@@ -1,5 +1,17 @@
 #ifndef TIM_CIRCULAR_BUFFER_HPP
 #define TIM_CIRCULAR_BUFFER_HPP
+/**
+ * @mainpage CircularBuffer Docs
+ * 
+ * # Circular Buffer Documentation
+ * <a href="https://github.com/tvanslyke/circular-buffer-cpp">Main Project Page</a>
+ * 
+ * tim::CircularBuffer Is a sequence container that encapsulates a resizable ring/circular buffer.
+ *
+ * ## Quick Reference
+ * * tim::CircularBuffer - A resizable circular buffer.
+ */
+
 
 #include <utility>
 #include <memory>
@@ -13,12 +25,42 @@
 #include <array>
 #include <climits>
 #include <limits>
+#include <functional>
 
+/**
+ * @def TIM_CICULAR_BUFFER_NO_USE_INTRINSICS
+ * Prevents the implementation from using compiler intrinsics for optimization.
+ * Currently intrinsics are only used for turning assertions into assumptions.
+ */
 #if defined(TIM_CICULAR_BUFFER_NO_USE_INTRINSICS) && defined(_MSC_VER)
 #include <immintrin.h>
 #endif
 
+#if !defined(TIM_CICULAR_BUFFER_NO_USE_INTRINSICS) && defined(NDEBUG)
+# if defined(__clang__)
+#  define TIM_CIRCULAR_BUFFER_ASSERT(x) __builtin_assume(x)
+# elif defined(__GNUC__)
+#  define TIM_CIRCULAR_BUFFER_ASSERT(x) if(x) {} else { __builtin_unreachable(); }
+# elif defined(_MSC_VER)
+#  define TIM_CIRCULAR_BUFFER_ASSERT(x) __assume(x)
+# else
+#  define TIM_CIRCULAR_BUFFER_ASSERT(x) assert(x)
+# endif
+#else
+# define TIM_CIRCULAR_BUFFER_ASSERT(x) assert(x)
+#endif
 
+#if !defined(TIM_CICULAR_BUFFER_NO_USE_INTRINSICS) && defined(NDEBUG)
+# if defined(__GNUC__)
+#  define TIM_CIRCULAR_BUFFER_ASSERT_UNREACHABLE() __builtin_unreachable();
+# elif defined(_MSC_VER)
+#  define TIM_CIRCULAR_BUFFER_ASSERT_UNREACHABLE() __assume(0)
+# else
+#  define TIM_CIRCULAR_BUFFER_ASSERT_UNREACHABLE() assert(!"Unreachable path reached.")
+# endif
+#else
+# define TIM_CIRCULAR_BUFFER_ASSERT_UNREACHABLE() assert(!"Unreachable path reached.")
+#endif
 
 
 namespace tim {
@@ -28,7 +70,88 @@ inline namespace circular_buffer {
 template <class T, class Allocator = std::allocator<T>>
 struct CircularBuffer;
 
+/// @cond
 namespace detail {
+
+template <class It, class Dest, class Pred>
+constexpr Dest do_remove_copy_if(It first, It last, Dest dest, Pred pred)
+{
+	while (first != last)
+	{
+		if (!pred(*first))
+		{
+			*dest++ = std::move(*first);
+		}
+		++first;
+	}
+	return dest;
+}
+
+template <class It, class Dest, class Pred>
+constexpr Dest do_remove_copy_if_backward(It first, It last, Dest dest_last, Pred pred)
+{
+	while (first != last)
+	{
+		--last;
+		if (!pred(*last))
+		{
+			--dest_last;
+			*dest_last = std::move(*last);
+		}
+	}
+	return dest_last;
+}
+
+
+template <class It, class Pred>
+constexpr std::pair<It, It> bidirectional_remove_if(It first, It last, Pred pred)
+{
+	first = std::find_if(first, last, std::not_fn(pred));
+	if (first == last)
+	{
+		return { first, first };
+	}
+	last = std::find_if(std::make_reverse_iterator(last), std::make_reverse_iterator(first), std::not_fn(pred)).base();
+	// It can't be the case that first == last because we would've returned in the above if() block.
+	TIM_CIRCULAR_BUFFER_ASSERT(first < last);
+	if (std::next(first) == last)
+	{
+		return { first, last };
+	}
+	auto head_pos = std::find_if(std::next(first), last, pred);
+	if (head_pos == last)
+	{
+		return { first, last };
+	}
+	TIM_CIRCULAR_BUFFER_ASSERT(head_pos < last);
+	auto tail_search_end = std::next(head_pos);
+	auto tail_pos = std::find_if(std::make_reverse_iterator(last), std::make_reverse_iterator(tail_search_end), pred).base();
+	auto head_count = head_pos - first;
+	auto tail_count = last - tail_pos;
+	if (tail_pos == tail_search_end)
+	{
+		if (head_count > tail_count)
+		{
+			last = std::move(tail_pos, last, head_pos);
+		}
+		else
+		{
+			first = std::move_backward(first, head_pos, tail_search_end);
+		}
+	}
+	else if (head_count > tail_count)
+	{
+		auto p = do_remove_copy_if(std::next(head_pos), std::prev(tail_pos), head_pos, pred);
+		last = std::move(tail_pos, last, p);
+	}
+	else
+	{
+		auto p = do_remove_copy_if_backward(std::next(head_pos), std::prev(tail_pos), tail_pos, pred);
+		first = std::move_backward(first, head_pos, p);
+	}
+	return { first, last };
+}
+
 
 template <
 	class It,
@@ -42,7 +165,7 @@ template <
 	> = false
 >
 constexpr It get_position_in_range(It first, It last, SizeType count, SizeType index) {
-	assert(count >= index);
+	TIM_CIRCULAR_BUFFER_ASSERT(count >= index);
 	auto dist_from_end = count - index;
 	if(index < dist_from_end) {
 		return std::next(first, index);
@@ -63,7 +186,7 @@ template <
 	> = false
 >
 constexpr It get_position_in_range(It first, It last, SizeType count, SizeType index) {
-	assert(count >= index);
+	TIM_CIRCULAR_BUFFER_ASSERT(count >= index);
 	return std::next(first, index);
 }
 
@@ -167,7 +290,7 @@ struct SingleValueIterator
 	}
 
 	constexpr SingleValueIterator& operator--() {
-		assert(pos_ != 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(pos_ != 0);
 		--pos_;
 		return *this;
 	}
@@ -192,7 +315,7 @@ struct SingleValueIterator
 	}
 
 	constexpr SingleValueIterator& operator-=(difference_type rhs) {
-		assert(pos_ >= rhs);
+		TIM_CIRCULAR_BUFFER_ASSERT(pos_ >= rhs);
 		pos_ -= rhs;
 		return *this;
 	}
@@ -229,22 +352,22 @@ struct SingleValueIterator
 	}
 
 	friend constexpr bool operator<(SingleValueIterator lhs, SingleValueIterator rhs) {
-		assert(lhs.value_ == rhs.value_);
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.value_ == rhs.value_);
 		return lhs.pos_ < rhs.pos_;
 	}
 
 	friend constexpr bool operator<=(SingleValueIterator lhs, SingleValueIterator rhs) {
-		assert(lhs.value_ == rhs.value_);
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.value_ == rhs.value_);
 		return lhs.pos_ <= rhs.pos_;
 	}
 	
 	friend constexpr bool operator>(SingleValueIterator lhs, SingleValueIterator rhs) {
-		assert(lhs.value_ == rhs.value_);
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.value_ == rhs.value_);
 		return lhs.pos_ > rhs.pos_;
 	}
 	
 	friend constexpr bool operator>=(SingleValueIterator lhs, SingleValueIterator rhs) {
-		assert(lhs.value_ == rhs.value_);
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.value_ == rhs.value_);
 		return lhs.pos_ >= rhs.pos_;
 	}
 
@@ -288,7 +411,7 @@ struct DefaultValueIterator
 	}
 
 	constexpr DefaultValueIterator& operator--() {
-		assert(pos_ != 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(pos_ != 0);
 		--pos_;
 		return *this;
 	}
@@ -313,7 +436,7 @@ struct DefaultValueIterator
 	}
 
 	constexpr DefaultValueIterator& operator-=(difference_type rhs) {
-		assert(pos_ >= rhs);
+		TIM_CIRCULAR_BUFFER_ASSERT(pos_ >= rhs);
 		pos_ -= rhs;
 		return *this;
 	}
@@ -466,31 +589,35 @@ constexpr auto copy_ranges(It first, It last, Dest dest)
 	auto dest_stop = dest->end();
 	auto src_pos = first->begin();
 	auto src_stop = first->end();
-	for(;;) {
+	for(;;)
+	{
 		auto src_sz = src_stop - src_pos;
 		auto dest_sz = dest_stop - dest_pos;
-		if(src_sz < dest_sz) {
+		if(src_sz <= dest_sz)
+		{
 			dest_pos = std::copy(src_pos, src_stop, dest_pos);
-			assert(dest_stop - dest_pos == dest_sz - src_sz);
+			TIM_CIRCULAR_BUFFER_ASSERT(dest_stop - dest_pos == dest_sz - src_sz);
 			++first;
-			if(first == last) {
-				return std::make_pair(dest, dest_pos);
+			if(first == last)
+			{
+				TIM_CIRCULAR_BUFFER_ASSERT(dest_pos == dest_stop);
+				return std::make_pair(std::next(dest), std::nullopt);
 			}
 			src_pos = first->begin();
 			src_stop = first->end();
+			if(dest_pos == dest_stop)
+			{
+				++dest;
+				dest_pos = dest->begin();
+				dest_stop = dest->end();
+			}
 		} else {
 			auto mid = src_pos + dest_sz;
+			TIM_CIRCULAR_BUFFER_ASSERT(mid != src_stop);
 			dest_pos = std::copy(src_pos, mid, dest_pos);
-			assert(dest_pos == dest_stop);
+			TIM_CIRCULAR_BUFFER_ASSERT(dest_pos == dest_stop);
+			src_pos = mid;
 			++dest;
-			if(mid == src_stop) {
-				++first;
-				if(first == last) {
-					return std::make_pair(dest, std::nullopt);
-				}
-				src_pos = first->begin();
-				src_stop = first->end();
-			}
 			dest_pos = dest->begin();
 			dest_stop = dest->end();
 		}
@@ -516,9 +643,9 @@ constexpr auto copy_ranges_backward(It first, It last, Dest dest)
 	for(;;) {
 		auto src_sz = src_stop - src_pos;
 		auto dest_sz = dest_stop - dest_pos;
-		if(src_sz < dest_sz) {
+		if(src_sz <= dest_sz) {
 			dest_stop = std::copy_backward(src_pos, src_stop, dest_stop);
-			assert(dest_stop - dest_pos == dest_sz - src_sz);
+			TIM_CIRCULAR_BUFFER_ASSERT(dest_stop - dest_pos == dest_sz - src_sz);
 			if(first == last) {
 				return std::make_pair(dest, dest_stop);
 			}
@@ -528,15 +655,9 @@ constexpr auto copy_ranges_backward(It first, It last, Dest dest)
 		} else {
 			auto mid = src_stop - dest_sz;
 			dest_stop = std::copy_backward(mid, src_stop, dest_stop);
-			assert(dest_pos == dest_stop);
-			if(mid == src_pos) {
-				if(first == last) {
-					return std::make_pair(dest, std::nullopt);
-				}
-				--last;
-				src_pos = last->begin();
-				src_stop = last->end();
-			}
+			TIM_CIRCULAR_BUFFER_ASSERT(dest_pos == dest_stop);
+			TIM_CIRCULAR_BUFFER_ASSERT(src_pos != src_stop);
+			src_stop = mid;
 			--dest;
 			dest_pos = dest->begin();
 			dest_stop = dest->end();
@@ -816,6 +937,7 @@ protected:
 		if(is_wrapped) {
 			set_has_wrapped(true);
 		}
+		_assert_invariants();
 	}
 
 	constexpr CircularBufferIteratorBase(pointer data, size_type cap, size_type tagged_index):
@@ -823,8 +945,24 @@ protected:
 		cap_(cap),
 		tagged_index_(tagged_index)
 	{
-		
+		_assert_invariants();
 	}
+
+
+	constexpr void _assert_invariants() const
+	{
+		TIM_CIRCULAR_BUFFER_ASSERT((cap_ & tag_mask) == 0u);
+		TIM_CIRCULAR_BUFFER_ASSERT((cap_ == 0) ? (tagged_index_ == 0) : ((tagged_index_ & ~tag_mask) < cap_ && data_));
+		
+		if((tagged_index_ & tag_mask) != 0u)
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT(cap_ != 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(tagged_index_ > cap_);
+			TIM_CIRCULAR_BUFFER_ASSERT((tagged_index_ & ~tag_mask) < cap_);
+			TIM_CIRCULAR_BUFFER_ASSERT(data_);
+		}
+	}
+
 public:
 	constexpr CircularBufferIteratorBase() = default;
 	constexpr CircularBufferIteratorBase(const CircularBufferIteratorBase&) = default;
@@ -836,42 +974,85 @@ public:
 
 protected:
 	constexpr pointer get_pointer() const {
+		_assert_invariants();
 		return data_ + get_index();
 	}
 
 	constexpr value_type* get_raw_pointer() const {
+		_assert_invariants();
 		return std::addressof(data_[get_index()]);
 	}
-
-	constexpr void add(size_type count) {
-		assert(count <= cap_);
-		if(get_has_wrapped()) {
-			assert(count <= (cap_ - get_index()));
-			tagged_index_ += count;
-		} else {
-			size_type rem = cap_ - tagged_index_;
-			if(rem > count) {
-				tagged_index_ += count;
-			} else {
-				// wrap around
-				tagged_index_ = (count - rem) | tag_mask;
-			}
+	
+	constexpr void incr()
+	{
+		_assert_invariants();
+		++tagged_index_;
+		// Don't need to check for the tag; If it's equal to capacity it's untagged.
+		if (tagged_index_ == cap_) [[unlikely]]
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT((tagged_index_ & tag_mask) == 0ul && "Buffer capacity is too large.");
+			tagged_index_ = tag_mask;
 		}
+		_assert_invariants();
 	}
 	
-	constexpr void subtract(size_type count) {
-		assert(count <= cap_);
-		if(get_has_wrapped()) {
-			const auto idx = get_index();
-			if(idx >= count) {
-				tagged_index_ -= count;
-			} else {
-				tagged_index_ = cap_ - (count - idx);
-			}
-		} else {
-			assert(count <= get_index());
-			tagged_index_ -= count;
+	constexpr void decr()
+	{
+		_assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(!(tagged_index_ == 0u) && "Trying to wrap around the beginning of the buffer, but the iterator isn't marked as wrapped (invalid iterator).");
+		if (tagged_index_ != tag_mask) [[likely]]
+		{
+			--tagged_index_;
 		}
+		else [[unlikely]]
+		{
+			// wrap around to the back of the buffer.
+			tagged_index_ = cap_ - 1;
+		}
+		_assert_invariants();
+	}
+
+	constexpr void add(size_type count)
+	{
+		_assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(count <= cap_);
+		size_type summed = tagged_index_ + count;
+		TIM_CIRCULAR_BUFFER_ASSERT(summed >= tagged_index_ || summed >= count);
+		if(summed < cap_ || get_has_wrapped())
+		{
+			tagged_index_ = summed;
+			_assert_invariants();
+			return;
+		}
+		if(cap_ != 0u)
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT(count != 0u);
+			tagged_index_ = (summed - cap_) | tag_mask;
+		}
+		else
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT(tagged_index_ == 0u);
+			TIM_CIRCULAR_BUFFER_ASSERT(count == 0u);
+		}
+		_assert_invariants();
+	}
+
+	constexpr void subtract(size_type count) {
+		_assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(count <= cap_);
+		if (!get_has_wrapped()) {
+			TIM_CIRCULAR_BUFFER_ASSERT(count <= get_index());
+			tagged_index_ -= count;
+			_assert_invariants();
+			return;
+		}
+		const auto idx = get_index();
+		if(idx >= count) {
+			tagged_index_ -= count;
+		} else {
+			tagged_index_ = cap_ - (count - idx);
+		}
+		_assert_invariants();
 	}
 
 	constexpr bool get_has_wrapped() const {
@@ -879,20 +1060,25 @@ protected:
 	}
 
 	constexpr void set_has_wrapped(bool value) {
+		_assert_invariants();
 		if(value) {
 			tagged_index_ |= tag_mask;
 		} else {
 			tagged_index_ &= ~tag_mask;
 		}
+		_assert_invariants();
 	}
 
 	constexpr size_type get_index() const {
+		_assert_invariants();
 		return tagged_index_ & ~tag_mask;
 	}
 
 	constexpr void set_index(size_type new_value) {
-		assert((new_value & tag_mask) == 0u);
+		_assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT((new_value & tag_mask) == 0u);
 		tagged_index_ = new_value | (tagged_index_ & tag_mask);
+		_assert_invariants();
 	}
 
 	template <class, class>
@@ -905,12 +1091,17 @@ protected:
 
 
 } /* namespace detail */
+/// @endcond
 
 template <class T, class Allocator>
 struct CircularBufferIterator;
 template <class T, class Allocator>
 struct ConstCircularBufferIterator;
 
+/**
+ * @brief
+ * A mutable LegacyRandomAccessIterator for CircularBuffer<T, Allocator>.
+ */
 template <class T, class Allocator>
 struct CircularBufferIterator: public detail::CircularBufferIteratorBase<false, T, Allocator> {
 private:
@@ -929,12 +1120,15 @@ private:
 	using base_type::tagged_index_;
 	using base_type::get_pointer;
 	using base_type::get_raw_pointer;
+	using base_type::incr;
+	using base_type::decr;
 	using base_type::add;
 	using base_type::subtract;
 	using base_type::get_has_wrapped;
 	using base_type::set_has_wrapped;
 	using base_type::get_index;
 	using base_type::set_index;
+	using base_type::_assert_invariants;
 
 public:
 	using difference_type   = typename base_type::difference_type;
@@ -948,7 +1142,7 @@ private:
 	constexpr CircularBufferIterator(pointer data, size_type cap, size_type index, bool is_wrapped):
 		base_type(data, cap, index, is_wrapped)
 	{
-	
+
 	}
 
 	constexpr CircularBufferIterator(const CircularBufferIterator<T, detail::AllocatorRef<Allocator>>& other) :
@@ -966,13 +1160,8 @@ public:
 	constexpr CircularBufferIterator& operator=(CircularBufferIterator&&) = default;
 
 	constexpr CircularBufferIterator& operator++() {
-		assert(data_);
-		if(cap_ - get_index() > 1) {
-			++tagged_index_;
-		} else {
-			set_index(0u);
-			set_has_wrapped(true);
-		}
+		TIM_CIRCULAR_BUFFER_ASSERT(data_);
+		incr();
 		return *this;
 	}
 
@@ -983,14 +1172,8 @@ public:
 	}
 
 	constexpr CircularBufferIterator& operator--() {
-		assert(data_);
-		if(get_index() == 0u) {
-			assert(get_has_wrapped() && "Invalid decriment on CircularBufferIterator.  Decrementing at the beginning of the buffer, but the buffer doesn't wrap around.");
-			tagged_index_ = cap_ - 1;
-			assert(!get_has_wrapped());
-		} else {
-			--tagged_index_;
-		}
+		TIM_CIRCULAR_BUFFER_ASSERT(data_);
+		decr();
 		return *this;
 	}
 
@@ -1001,7 +1184,7 @@ public:
 	}
 
 	constexpr reference operator*() const {
-		return data_[get_index()];
+		return *get_pointer();
 	}
 
 	constexpr pointer operator->() const {
@@ -1042,8 +1225,10 @@ public:
 	}
 
 	friend constexpr difference_type operator-(CircularBufferIterator lhs, CircularBufferIterator rhs) {
-		assert(lhs.data_ == lhs.data_);
-		assert(lhs.cap_ == lhs.cap_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == lhs.data_);
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.cap_ == lhs.cap_);
 		if(lhs.get_has_wrapped()) {
 			if(rhs.get_has_wrapped()) {
 				return lhs.tagged_index_ - rhs.tagged_index_;
@@ -1064,8 +1249,10 @@ public:
 	}
 
 	friend constexpr bool operator==(CircularBufferIterator lhs, CircularBufferIterator rhs) {
+		lhs._assert_invariants();
+		rhs._assert_invariants();
 		if(lhs.data_ == rhs.data_) {
-			assert(lhs.cap_ == rhs.cap_);
+			TIM_CIRCULAR_BUFFER_ASSERT(lhs.cap_ == rhs.cap_);
 			return lhs.tagged_index_ == rhs.tagged_index_;
 		} else {
 			return false;
@@ -1077,30 +1264,42 @@ public:
 	}
 
 	friend constexpr bool operator<(CircularBufferIterator lhs, CircularBufferIterator rhs) {
-		assert(lhs.data_ == rhs.data_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ < rhs.tagged_index_;
 	}
 
 	friend constexpr bool operator<=(CircularBufferIterator lhs, CircularBufferIterator rhs) {
-		assert(lhs.data_ == rhs.data_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ <= rhs.tagged_index_;
 	}
 	
 	friend constexpr bool operator>(CircularBufferIterator lhs, CircularBufferIterator rhs) {
-		assert(lhs.data_ == rhs.data_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ > rhs.tagged_index_;
 	}
 	
 	friend constexpr bool operator>=(CircularBufferIterator lhs, CircularBufferIterator rhs) {
-		assert(lhs.data_ == rhs.data_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ >= rhs.tagged_index_;
 	}
 
 };
 
-
+/**
+ * @brief
+ * A const LegacyRandomAccessIterator for CircularBuffer<T, Allocator>.
+ */
 template <class T, class Allocator>
-struct ConstCircularBufferIterator: public detail::CircularBufferIteratorBase<true, T, Allocator> {
+struct ConstCircularBufferIterator: public detail::CircularBufferIteratorBase<true, T, Allocator>
+{
 private:
 	using base_type = detail::CircularBufferIteratorBase<true, T, Allocator>;
 	template <class, class>
@@ -1117,12 +1316,15 @@ private:
 	using base_type::tagged_index_;
 	using base_type::get_pointer;
 	using base_type::get_raw_pointer;
+	using base_type::incr;
+	using base_type::decr;
 	using base_type::add;
 	using base_type::subtract;
 	using base_type::get_has_wrapped;
 	using base_type::set_has_wrapped;
 	using base_type::get_index;
 	using base_type::set_index;
+	using base_type::_assert_invariants;
 
 
 public:
@@ -1160,17 +1362,9 @@ public:
 
 	}
 
-
-
-
 	constexpr ConstCircularBufferIterator& operator++() {
-		assert(data_);
-		if(cap_ - get_index() > 1) {
-			++tagged_index_;
-		} else {
-			set_index(0u);
-			set_has_wrapped(true);
-		}
+		TIM_CIRCULAR_BUFFER_ASSERT(data_);
+		incr();
 		return *this;
 	}
 
@@ -1181,14 +1375,8 @@ public:
 	}
 
 	constexpr ConstCircularBufferIterator& operator--() {
-		assert(data_);
-		if(get_index() == 0u) {
-			assert(get_has_wrapped() && "Invalid decriment on ConstCircularBufferIterator.  Decrementing at the beginning of the buffer, but the buffer doesn't wrap around.");
-			tagged_index_ = cap_ - 1;
-			assert(!get_has_wrapped());
-		} else {
-			--tagged_index_;
-		}
+		TIM_CIRCULAR_BUFFER_ASSERT(data_);
+		decr();
 		return *this;
 	}
 
@@ -1240,8 +1428,10 @@ public:
 	}
 
 	friend constexpr difference_type operator-(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
-		assert(lhs.data_ == lhs.data_);
-		assert(lhs.cap_ == lhs.cap_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == lhs.data_);
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.cap_ == lhs.cap_);
 		if(lhs.get_has_wrapped()) {
 			if(rhs.get_has_wrapped()) {
 				return lhs.tagged_index_ - rhs.tagged_index_;
@@ -1262,8 +1452,10 @@ public:
 	}
 
 	friend constexpr bool operator==(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
+		lhs._assert_invariants();
+		rhs._assert_invariants();
 		if(lhs.data_ == rhs.data_) {
-			assert(lhs.cap_ == rhs.cap_);
+			TIM_CIRCULAR_BUFFER_ASSERT(lhs.cap_ == rhs.cap_);
 			return lhs.tagged_index_ == rhs.tagged_index_;
 		} else {
 			return false;
@@ -1275,77 +1467,137 @@ public:
 	}
 
 	friend constexpr bool operator<(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
-		assert(lhs.data_ == rhs.data_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ < rhs.tagged_index_;
 	}
 
 	friend constexpr bool operator<=(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
-		assert(lhs.data_ == rhs.data_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ <= rhs.tagged_index_;
 	}
 	
 	friend constexpr bool operator>(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
-		assert(lhs.data_ == rhs.data_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ > rhs.tagged_index_;
 	}
 	
 	friend constexpr bool operator>=(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
-		assert(lhs.data_ == rhs.data_);
+		lhs._assert_invariants();
+		rhs._assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
 		return lhs.tagged_index_ >= rhs.tagged_index_;
 	}
 };
 
 namespace tags {
 
+/** Tag type used to indicate that the layout of a CircularBuffer should be preserved when making a copy. */
 struct PreserveBufferLayout {};
+/** Tag object used to indicate that the layout of a CircularBuffer should be preserved when making a copy. */
 inline constexpr auto preserve_layout = PreserveBufferLayout{};
 
+/** Tag type used to indicate that the capacity of a CircularBuffer should be preserved when making a copy. */
 struct PreserveBufferCapacity {};
+/** Tag object used to indicate that the capacity of a CircularBuffer should be preserved when making a copy. */
 inline constexpr auto preserve_capacity = PreserveBufferCapacity{};
 
+/** Tag type used to indicate that the layout of a CircularBuffer need not be preserved when making a copy. */
 struct Optimized{};
+/** Tag object used to indicate that the layout of a CircularBuffer need not be preserved when making a copy. */
 inline constexpr auto optimized = Optimized{};
 
 } /* namespace tags */
 
 
+/** Simple type used to describe the layout of a circular buffer. */
 template <class SizeType>
 struct BufferShape
 {
+	/** Capacity of the buffer. */
 	SizeType capacity = 0;
+	/** Physical index into the buffer of logical index 0 (begin_index()). */
 	SizeType start = 0;
 
+	/** Defaulted comparison operators. */
 	friend constexpr auto operator<=>(const BufferShape& lhs, const BufferShape& rhs) = default;
 };
 
+/// @cond
 namespace detail {
 
 struct ReserveTag {};
 static constexpr ReserveTag reserve_tag = {};
-}
 
+struct ShapeTag {};
+static constexpr ShapeTag shape_tag = {};
+
+}
+/// @endcond
+
+/**
+ * @brief
+ * A sequence container that encapsulates a resizable ring/circular buffer.
+ * 
+ * This type is similar to std::vector, supporting nearly every member function that std::vector has (with near identical semantics),
+ * except that the CircularBuffer supports additional operations and does not guarantee that its elements are stored contiguously.
+ * 
+ * The elements are stored in a contiguous underlying "physical" buffer but instead of storage always beginning at the start of the
+ * "physical" buffer, as is done with std::vector, instead the actual "logical" position of the beginning of the element storage may
+ * be at some offset into the physical buffer.
+ * Additionally, the "logical" end of the element storage may wrap around to the beginning of the "physical" buffer if the needed.
+ * This flexibility in the start and end of the buffer allows for elements to be more efficiently moved around in storage when performing
+ * certain operations.
+ * For example inserting elements near the front of a std::vector's storage, say at index 2, would require moving all elements after  
+ * index 2, whereas with CircularBuffer, only those 2 elements preceding the element at index 2 would need to be moved to make room for
+ * the insertion (assuming no reallocation takes place).
+ * This flexibility also allows for more efficient implementations of other operations, such as erasure (including a faster 'erase_if()'),
+ * prepending elements, condition.
+ * This efficiency comes at the price of CircularBuffer being larger than an efficiently-implemented std::vector by additional pointer-sized 
+ * member, as well as slightly more costly traversal of the stored elements (e.g. "fat" iterators that are about the size of 3 pointers).
+ * 
+ * CircularBuffer efficiently support additional operations that std::vector does not, such as push_front()/pop_front(), and "shifting" of
+ * logical elements' positions in the physical storage.
+ * 
+ * @tparam T         The type of the elements.
+ * @tparam Allocator An allocator that is used to acquire/release memory and to construct/destroy the elements in that memory.
+ *                   The type must meet the requirements of Allocator.
+ *                   The program is ill-formed (since C++20) if Allocator::value_type is not the same as T.
+ * 
+ * @note
+ * The requirements that are imposed on the elements depend on the actual operations performed on the container.
+ * Generally, it is required that element type meets the requirements of Erasable, but many member functions impose stricter requirements.
+ * This container (but not its members) can be instantiated with an incomplete element type if the allocator satisfies the allocator completeness requirements.
+ * @note
+ * CircularBuffer is an <a href="https://en.cppreference.com/w/cpp/named_req/AllocatorAwareContainer">AllocatorAwareContainer</a>.
+ */
 template <class T, class Allocator>
-struct CircularBuffer : private detail::AllocatorBase<Allocator> {
+struct CircularBuffer : private detail::AllocatorBase<Allocator>
+{
 private:
 	using alloc_traits = std::allocator_traits<Allocator>;
 	using base_type = detail::AllocatorBase<Allocator>;
 	using base_type::alloc;
 
-	using ptr_traits = std::pointer_traits<typename alloc_traits::pointer>;
 public:
-	using value_type = T;
-	using allocator_type = Allocator;
-	using size_type = typename alloc_traits::size_type;
-	using difference_type = typename alloc_traits::difference_type;
-	using reference = value_type&;
-	using const_reference = const value_type&;
-	using pointer = typename alloc_traits::pointer;
-	using const_pointer = typename alloc_traits::const_pointer;
-	using iterator = CircularBufferIterator<T, Allocator>;
-	using const_iterator = ConstCircularBufferIterator<T, Allocator>;
-	using reverse_iterator = std::reverse_iterator<iterator>;
+	using value_type             = T;
+	using allocator_type         = Allocator;
+	using size_type              = typename alloc_traits::size_type;
+	using difference_type        = typename alloc_traits::difference_type;
+	using reference              = value_type&;
+	using const_reference        = const value_type&;
+	using pointer                = typename alloc_traits::pointer;
+	using const_pointer          = typename alloc_traits::const_pointer;
+	using iterator               = CircularBufferIterator<T, Allocator>;
+	using const_iterator         = ConstCircularBufferIterator<T, Allocator>;
+	using reverse_iterator       = std::reverse_iterator<iterator>;
 	using const_reverse_iterator = std::reverse_iterator<const_iterator>;
-	using shape_type = BufferShape<size_type>;
+	using shape_type             = BufferShape<size_type>;
 
 	static_assert(std::is_same_v<T, typename std::allocator_traits<Allocator>::value_type>,
 		"Allocator's value_type doesn't match the container value_type in CircularBuffer<T, Allocator>.");
@@ -1537,7 +1789,7 @@ private:
 		}
 
 		constexpr size_type size() const {
-			assert(ranges_[0].size() == 0 ? ranges_[1].size() == 0 : true);
+			TIM_CIRCULAR_BUFFER_ASSERT(ranges_[0].size() == 0 ? ranges_[1].size() == 0 : true);
 			return size_type(ranges_[0].size() != 0) + size_type(ranges_[1].size() != 0);
 		}
 
@@ -1569,23 +1821,23 @@ private:
 		}
 
 		constexpr const SplitRange<Ptr>& front() const {
-			assert(size() != 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(size() != 0);
 			return ranges_[0];
 		}
 
 		constexpr SplitRange<Ptr>& front() {
-			assert(size() != 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(size() != 0);
 			return ranges_[0];
 		}
 
 		constexpr const SplitRange<Ptr>& back() const {
-			assert(size() == 2);
-			return ranges_[1];
+			TIM_CIRCULAR_BUFFER_ASSERT(size() >= 1);
+			return ranges_[size()-1];
 		}
 
 		constexpr SplitRange<Ptr>& back() {
-			assert(size() == 2);
-			return ranges_[1];
+			TIM_CIRCULAR_BUFFER_ASSERT(size() >= 1);
+			return ranges_[size()-1];
 		}
 
 		constexpr const SplitRange<Ptr>& operator[](size_type idx) const
@@ -1644,7 +1896,7 @@ private:
 	};
 
 	auto make_manual_append_guard() {
-		return make_manual_scope_guard([this, initial_size = this->size()]() {
+		return detail::make_manual_scope_guard([this, initial_size = this->size()]() {
 			size_type sz = this->size();
 			if (sz > initial_size) {
 				this->pop_back_n(sz - initial_size);
@@ -1653,7 +1905,7 @@ private:
 	}
 
 	auto make_manual_prepend_guard() {
-		return make_manual_scope_guard([this, initial_size = this->size()]() {
+		return detail::make_manual_scope_guard([this, initial_size = this->size()]() {
 			size_type sz = this->size();
 			if (sz > initial_size) {
 				this->pop_front_n(sz - initial_size);
@@ -1754,19 +2006,19 @@ private:
 	template <class Ranges>
 	constexpr void initialize_split_buffer_fast(const Ranges& ranges)
 	{
-		assert(size() == 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(size() == 0);
 		const auto ranges_count = ranges.size();
 		if (ranges_count == 0)
 		{
 			return;
 		}
-		assert(ranges.total() <= capacity());
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges.total() <= capacity());
 		auto dest_pos = data_ + start_;
 		const auto wrap_pos = data_ + capacity();
 
 		for (auto&& item : ranges[0])
 		{
-			assert(dest_pos != wrap_pos);
+			TIM_CIRCULAR_BUFFER_ASSERT(dest_pos != wrap_pos);
 			construct(dest_pos++, std::forward<decltype(item)>(item));
 			++size_;
 		}
@@ -1774,12 +2026,12 @@ private:
 		{
 			return;
 		}
-		assert(dest_pos == wrap_pos);
+		TIM_CIRCULAR_BUFFER_ASSERT(dest_pos == wrap_pos);
 		dest_pos = data_;
 		const auto start_pos = data_ + start_;
 		for (auto&& item : ranges[1])
 		{
-			assert(dest_pos != start_pos);
+			TIM_CIRCULAR_BUFFER_ASSERT(dest_pos != start_pos);
 			construct(dest_pos++, std::forward<decltype(item)>(item));
 			++size_;
 		}
@@ -1788,8 +2040,8 @@ private:
 	template <class Ranges>
 	constexpr void initialize_continuous_buffer_fast(const Ranges& ranges)
 	{
-		assert(size() == 0);
-		assert(ranges.total() <= capacity());
+		TIM_CIRCULAR_BUFFER_ASSERT(size() == 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges.total() <= capacity());
 		auto dest_pos = data_ + start_;
 		const auto wrap_pos = data_ + capacity();
 
@@ -1797,7 +2049,7 @@ private:
 		{
 			for (auto pos = range.begin(); pos != range.end(); ++pos)
 			{
-				assert(dest_pos != wrap_pos);
+				TIM_CIRCULAR_BUFFER_ASSERT(dest_pos != wrap_pos);
 				construct(dest_pos++, *pos);
 				++size_;
 			}
@@ -1807,10 +2059,10 @@ private:
 	template <class Int, std::enable_if_t<std::is_signed_v<Int>, bool> = true>
 	static constexpr size_type size_from_iterator_difference(Int value)
 	{
-		assert(value >= 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(value >= 0);
 		if constexpr(static_cast<std::make_unsigned_t<Int>>(std::numeric_limits<Int>::max()) > std::numeric_limits<size_type>::max())
 		{
-			assert(static_cast<std::make_unsigned_t<Int>>(value) <= std::numeric_limits<size_type>::max());
+			TIM_CIRCULAR_BUFFER_ASSERT(static_cast<std::make_unsigned_t<Int>>(value) <= std::numeric_limits<size_type>::max());
 		}
 		return static_cast<size_type>(value);
 	}
@@ -1841,7 +2093,7 @@ private:
 			{
 				cap = other.size();
 			}
-			CircularBuffer buf(shape_type{ cap, start }, alloc);
+			CircularBuffer buf = from_shape(shape_type{ cap, start }, alloc);
 			if(start == 0)
 			{
 				buf.initialize_continuous_buffer_fast(other.get_ranges().as_moving_ranges());
@@ -1868,19 +2120,44 @@ private:
 	{
 		reserve_fast(cap);
 	}
-
+	
+	constexpr CircularBuffer(detail::ShapeTag, shape_type shape, const Allocator& al=Allocator()) noexcept(std::is_nothrow_copy_constructible_v<Allocator>):
+		base_type(al)
+	{
+		TIM_CIRCULAR_BUFFER_ASSERT(shape.start < shape.capacity);
+		initialize_allocation(shape.capacity);
+		start_ = shape.start;
+	}
+	
 public:
+	
+	/// @internal 
+	constexpr void _assert_invariants() const
+	{
+		assert(size() <= capacity());
+		assert(begin_index() < capacity() || (capacity() == 0 && begin_index() == 0));
+		assert(size() < max_size());
+		if (!data_)
+		{
+			assert(capacity() == 0);
+			assert(size() == 0);
+		}
+	}
+	/// @endinternal 
+
+
+	/** Destroys all elements in the container and releases all memory allocated. */
 	constexpr ~CircularBuffer()
 	{
 		if(!data_)
 		{
-			assert(cap_ == 0);
-			assert(size_ == 0);
-			assert(start_ == 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(cap_ == 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(size_ == 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(start_ == 0);
 			return;
 		}
-		assert(cap_ >= size_);
-		assert(start_ < cap_ || (cap_ == 0u && start_ == 0));
+		TIM_CIRCULAR_BUFFER_ASSERT(cap_ >= size_);
+		TIM_CIRCULAR_BUFFER_ASSERT(start_ < cap_ || (cap_ == 0u && start_ == 0));
 		auto ranges = get_ranges();
 		for(auto range: ranges)
 		{
@@ -1891,15 +2168,35 @@ public:
 		}
 		deallocate(data_, cap_);
 	}
-	/* Constructors */
+	/** @brief Default constructor. Constructs an empty buffer with 0 capacity. */
 	constexpr CircularBuffer() = default;
 	
-	constexpr CircularBuffer(const Allocator& alloc) noexcept(std::is_nothrow_copy_constructible_v<Allocator>):
-		base_type(alloc)
+	/**
+	 * @brief Constructs an empty container with the given allocator alloc.
+	 * 
+	 * @param al The allocator to construct the new buffer with.
+	 */
+	constexpr CircularBuffer(const Allocator& al) noexcept(std::is_nothrow_copy_constructible_v<Allocator>):
+		base_type(al)
 	{
 
 	}
 
+	/**
+	 * @brief
+	 * Constructs a copy of 'other' with the given allocator 'al' using the method specified by 'tag'.
+	 * 
+	 * If 'tag' has type 'tags::PreserveBufferLayout', then new buffer will have the same 'capacity()' and 'begin_index()'
+	 * as the old buffer.
+	 * If 'tag' has type 'tags::PreserveBufferCapacity', then new buffer will have the same 'capacity()' as the old buffer,
+	 * with unspecified 'begin_index()'.
+	 * If 'tag' has type 'tags::Optimized', then new buffer will reserve an implementation-defined amount of memory.  In practice,
+	 * this is only enough memory to fit the elements in 'other'.
+	 * 
+	 * @param tag   Tag object controlling how the copy operation is to take place; one of tags::optimized, tags::preserve_layout, or tags::preserve_capacity.
+	 * @param other The circular buffer whose contents are to be copied.
+	 * @param al    The allocator to construct the new buffer with.
+	 */
 	template <
 		class TagType,
 		std::enable_if_t<
@@ -1917,28 +2214,32 @@ public:
 	{
 		(void)tag;
 		size_type new_cap = 0;
+		size_type new_start = 0;
 		if constexpr(std::is_same_v<TagType, tags::Optimized>)
 		{
 			new_cap = other.size();
-			start_ = 0;
+			new_start = 0;
 		}
 		else if constexpr(std::is_same_v<TagType, tags::PreserveBufferCapacity>)
 		{
 			new_cap = other.capacity();
-			start_ = 0;
+			new_start = 0;
 		}
 		else 
 		{
 			// tag == tags::preserve_layout
 			new_cap = other.capacity();
-			start_ = other.start_;
+			new_start = other.start_;
 		}
 		constexpr bool could_wrap = std::is_same_v<TagType, tags::PreserveBufferLayout>;
 		initialize_allocation(new_cap);
-		auto dest_pos = data_ + start_;
-		for(auto range: other.get_ranges())
+		start_ = new_start;
+		auto dest_pos = data_ + new_start;
+		auto ranges = other.get_ranges();
+		switch(ranges.size())
 		{
-			for(const auto& item: range)
+		case 2:
+			for(const auto& item: ranges.front())
 			{
 				construct(dest_pos++, item);
 				++size_;
@@ -1946,12 +2247,37 @@ public:
 			if constexpr(could_wrap)
 			{
 				// if other's data wraps around and we're preserving the layout, then we need to wrap our storage around as well for the second range.
-				assert(other.storage_is_split() ? dest_pos == (data_ + capacity()) : true);
+				TIM_CIRCULAR_BUFFER_ASSERT(dest_pos == (data_ + capacity()));
 				dest_pos = data_;
 			}
+			[[fallthrough]];
+		case 1:
+			for(const auto& item: ranges.back())
+			{
+				construct(dest_pos++, item);
+				++size_;
+			}
+			break;
+		default:
+			break;
 		}
 	}
 
+	/**
+	 * @brief
+	 * Constructs a copy of 'other' using the method specified by 'tag'.
+	 * 
+	 * If 'tag' has type 'tags::PreserveBufferLayout', then new buffer will have the same 'capacity()' and 'begin_index()'
+	 * as the old buffer.
+	 * If 'tag' has type 'tags::PreserveBufferCapacity', then new buffer will have the same 'capacity()' as the old buffer,
+	 * with unspecified 'begin_index()'.
+	 * If 'tag' has type 'tags::Optimized', then new buffer will reserve only enough memory to fit the elements in 'other'.
+	 * 
+	 * The allocator of the new buffer is determined as if by calling 'other.get_allocator().select_on_container_copy_construction()'.
+	 * 
+	 * @param tag   Tag object controlling how the copy operation is to take place; one of tags::optimized, tags::preserve_layout, or tags::preserve_capacity.
+	 * @param other The circular buffer whose contents are to be copied.
+	 */
 	template <
 		class TagType,
 		std::enable_if_t<
@@ -1960,7 +2286,8 @@ public:
 				tags::PreserveBufferLayout,
 				tags::PreserveBufferCapacity,
 				tags::Optimized
-			>
+			>,
+			bool
 		> = true
 	>
 	constexpr CircularBuffer(TagType tag, const CircularBuffer& other):
@@ -1968,12 +2295,30 @@ public:
 	{
 		
 	}
+
+	/**
+	 * @brief
+	 * Constructs a copy of 'other' with the given allocator 'al' as if by calling 'CircularBuffer(tags::optimized, other, al)'.
+	 * 
+	 * @param tag   Tag object controlling how the copy operation is to take place; one of tags::optimized, tags::preserve_layout, or tags::preserve_capacity.
+	 * @param other The circular buffer whose contents are to be copied.
+	 */
 	constexpr CircularBuffer(const CircularBuffer& other, const Allocator& al):
 		CircularBuffer(tags::optimized, other, al)
 	{
 		
 	}
 
+	/**
+	 * @brief
+	 * Move constructor.
+	 * 
+	 * Constructs the container with the contents of other using move semantics.
+	 * Allocator is obtained by move-construction from the allocator belonging to other.
+	 * After the move, other is guaranteed to be empty().
+	 * 
+	 * @param other The circular buffer whose contents are to be moved.
+	 */
 	constexpr CircularBuffer(CircularBuffer&& other) noexcept:
 		base_type(std::move(other.alloc())),
 		data_(std::exchange(other.data_, nullptr)),
@@ -1984,6 +2329,29 @@ public:
 
 	}
 
+	/**
+	 * @brief
+	 * Tagged move constructor.
+	 * 
+	 * Constructs the container with the contents of other using move semantics.
+	 * Allocator is obtained by move-construction from the allocator belonging to other.
+	 * After the move, other is guaranteed to be empty().
+	 * Move-constructs a copy of 'other' using the method specified by 'tag'.
+	 * If 'tag' has type 'tags::PreserveBufferLayout', then new buffer will have the same 'capacity()' and 'begin_index()'
+	 * as the old buffer.
+	 * If 'tag' has type 'tags::PreserveBufferCapacity', then new buffer will have the same 'capacity()' as the old buffer,
+	 * with unspecified 'begin_index()'.
+	 * If 'tag' has type 'tags::Optimized', then new buffer will reserve only enough memory to fit the elements in 'other'.
+	 * 
+	 * @param tag   Tag object controlling how the copy operation is to take place; one of tags::optimized, tags::preserve_layout, or tags::preserve_capacity.
+	 * @param other The circular buffer whose contents are to be moved.
+	 * 
+	 * @note
+	 * In practice, the 'tag' argument is ignored as the 'optimized' path is the same as the layout-preserving path and no memory is allocated.
+	 * @note
+	 * This overload exists primarily to support perfect-forwarding in conjunction with the non-moving version.
+	 */
+
 	template <
 		class TagType,
 		std::enable_if_t<
@@ -1992,16 +2360,39 @@ public:
 				tags::PreserveBufferLayout,
 				tags::PreserveBufferCapacity,
 				tags::Optimized
-			>
-				
+			>,
+			bool
 		> = true
 	>
-	constexpr CircularBuffer(TagType tag, CircularBuffer&& other):
+	constexpr CircularBuffer(TagType, CircularBuffer&& other):
 		CircularBuffer(std::move(other))
 	{
 		
 	}
 
+	/**
+	 * @brief
+	 * Tagged move constructor with custom allocator.
+	 * 
+	 * Constructs the container with the contents of other using move semantics.
+	 * Allocator is obtained from the parameter 'al'.
+	 * After the move, other is guaranteed to be empty().
+	 * Move-constructs a copy of 'other' using the method specified by 'tag'.
+	 * If the passed-in allocator is equal to the allocator used by 'other' (determined by calling operator==() or if
+	 * std::allocator_traits<Allocator>::is_always_equal is true), then this overload proceeds similarly to 'CircularBuffer(TagType tag, CircularBuffer&& other)'.
+	 * That is, no new memory is allocated and instead the new buffer takes ownership of the memory from 'other'.
+	 * Otherwise, if the allocators are not equal, then 'al' is used to initialize the new buffer's allocator, and the elements from 'other'
+	 * are moved into the new storage.
+	 * If 'tag' has type 'tags::PreserveBufferLayout', then new buffer will have the same 'capacity()' and 'begin_index()'
+	 * as the old buffer.
+	 * If 'tag' has type 'tags::PreserveBufferCapacity', then new buffer will have the same 'capacity()' as the old buffer,
+	 * with unspecified 'begin_index()'.
+	 * If 'tag' has type 'tags::Optimized', then new buffer will reserve only enough memory to fit the elements in 'other'.
+	 * 
+	 * @param tag   Tag object controlling how the copy operation is to take place; one of tags::optimized, tags::preserve_layout, or tags::preserve_capacity.
+	 * @param other The circular buffer whose contents are to be moved.
+	 * @param al    The allocator to use for the new buffer.
+	 */
 	template <
 		class TagType,
 		std::enable_if_t<
@@ -2010,101 +2401,61 @@ public:
 				tags::PreserveBufferLayout,
 				tags::PreserveBufferCapacity,
 				tags::Optimized
-			>
-				
+			>,
+			bool
 		> = true
 	>
-	constexpr CircularBuffer(TagType tag, CircularBuffer&& other, const Allocator& alloc):
-		CircularBuffer(do_tagged_move_construction(tag, std::move(other), alloc))
+	constexpr CircularBuffer(TagType tag, CircularBuffer&& other, const Allocator& al):
+		CircularBuffer(do_tagged_move_construction(tag, std::move(other), al))
 	{
 		
 	}
 
-
-
+	/**
+	 * @brief
+	 * Move constructor with custom allocator.
+	 * 
+	 * Constructs the container with the contents of other using move semantics.
+	 * Allocator is obtained from the parameter 'al'.
+	 * After the move, other is guaranteed to be empty().
+	 * If the passed-in allocator is equal to the allocator used by 'other' (determined by calling operator==() or if
+	 * std::allocator_traits<Allocator>::is_always_equal is true), then this overload proceeds similarly to 'CircularBuffer(CircularBuffer&& other)'.
+	 * That is, no new memory is allocated and instead the new buffer takes ownership of the memory from 'other'.
+	 * Otherwise, if the allocators are not equal, then 'al' is used to initialize the new buffer's allocator, and the elements from 'other'
+	 * are moved into the new storage.
+	 * 
+	 * @param other The circular buffer whose contents are to be moved.
+	 * @param al    The allocator to use for the new buffer.
+	 */
 	constexpr CircularBuffer(CircularBuffer&& other, const Allocator& alloc) noexcept:
 		CircularBuffer(do_tagged_move_construction(tags::optimized, std::move(other), alloc))
 	{
 
 	}
-#if 0
-	template <
-		class It,
-		std::enable_if_t<
-			std::is_convertible_v<
-				typename std::iterator_traits<It>::iterator_category, 
-				std::forward_iterator_tag
-			>,
-			bool
-		> = true 
-	>
-	constexpr CircularBuffer(shape_type shape, It first, It last, const Allocator& alloc = Allocator()):
-		CircularBuffer(shape, alloc)
-	{
-		size_type count = std::distance(first, last);
-		assert(capacity() >= count);
-		append_fast(first, last, count);
-	}
 
-	constexpr CircularBuffer(shape_type shape, const CircularBuffer& other, const Allocator& al):
-		CircularBuffer(al)
-	{
-		assert(shape.capacity >= other.size());
-		assert(shape.start < shape.capacity);
-		data_ = allocate(shape.capacity);
-		start_ = shape.start;
-		for(auto r: other.get_ranges())
-		{
-			append_fast(r.begin(), r.end());
-		}
-	}
-
-	constexpr CircularBuffer(shape_type shape, const CircularBuffer& other):
-		CircularBuffer(shape, other, other.select_on_container_copy_construction())
-	{
-
-	}
-
-	constexpr CircularBuffer(shape_type shape, CircularBuffer&& other, const Allocator& al):
-		CircularBuffer(al)
-	{
-		assert(shape.capacity >= other.size());
-		assert(shape.start < shape.capacity);
-		data_ = allocate(shape.capacity);
-		start_ = shape.start;
-		for(auto r: other.get_ranges())
-		{
-			append_fast(std::make_move_iterator(r.begin()), std::make_move_iterator(r.end()));
-		}
-	}
-
-	constexpr CircularBuffer(shape_type shape, CircularBuffer&& other):
-		CircularBuffer(shape == other.buffer_shape() ? std::move(other) : CircularBuffer(shape, std::move(other), other.alloc()))
-	{
-
-	}
-
-	constexpr CircularBuffer(shape_type shape, std::initializer_list<T> init, const Allocator& alloc = Allocator()):
-		CircularBuffer(shape, init.begin(), init.end(), alloc)
-	{
-
-	}
-#endif /* 0 */
-
-	constexpr CircularBuffer(shape_type shape, const Allocator& alloc) noexcept(std::is_nothrow_copy_constructible_v<Allocator>):
-		base_type(alloc)
-	{
-		assert(shape.start < shape.capacity);
-		initialize_allocation(shape.capacity);
-		start_ = shape.start;
-	}
-
+	/**
+	 * @brief
+	 * Initializer list constructor.
+	 * 
+	 * Constructs the container with the contents of the initializer list 'init'.
+	 * 
+	 * @param init The initializer list whose contents are used to initialize the buffer.
+	 * @param al   The allocator to use for the new buffer.
+	 */
 	constexpr CircularBuffer(std::initializer_list<T> init, const Allocator& alloc = Allocator()):
 		CircularBuffer(init.begin(), init.end(), alloc)
 	{
 
 	}
-
+	
+	/**
+	 * @brief
+	 * Constructs the container with 'count' copies of elements with value 'value'.
+	 * 
+	 * @param count The number of elements to construct.
+	 * @param value The object whose value is used to initialize the new elements.
+	 * @param al    The allocator to use for the new buffer.
+	 */
 	explicit CircularBuffer(size_type count, const value_type& value, const Allocator& alloc = Allocator()):
 		CircularBuffer(alloc)
 	{
@@ -2116,7 +2467,14 @@ public:
 			++size_;
 		}
 	}
-		
+
+	/**
+	 * @brief
+	 * Constructs the container with 'count' default-consrtucted elements.
+	 * 
+	 * @param count The number of elements to construct.
+	 * @param al    The allocator to use for the new buffer.
+	 */
 	explicit constexpr CircularBuffer(size_type count, const Allocator& alloc = Allocator()):
 		CircularBuffer(alloc)
 	{
@@ -2129,6 +2487,14 @@ public:
 		}
 	}
 	
+	/**
+	 * @brief
+	 * Constructs the container with the contents of the range [first, last).
+	 * 
+	 * @param first Iterator to the first element in the range to construct the buffer from.
+	 * @param last  Iterator to the past-the-end element in the range to construct the buffer from.
+	 * @param al    The allocator to use for the new buffer.
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -2143,10 +2509,18 @@ public:
 		CircularBuffer(alloc)
 	{
 		auto count = std::distance(first, last);
-		assert(count >= 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(count >= 0);
 		assign_empty(first, last, static_cast<size_type>(count));
 	}
 
+	/**
+	 * @brief
+	 * Constructs the container with the contents of the range [first, last).
+	 * 
+	 * @param first Iterator to the first element in the range to construct the buffer from.
+	 * @param last  Iterator to the past-the-end element in the range to construct the buffer from.
+	 * @param al    The allocator to use for the new buffer.
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -2163,13 +2537,52 @@ public:
 		assign(first, last);
 	}
 
+	/**
+	 * @brief
+	 * Copy constructor. Constructs the container with the copy of the contents of other.
+	 * 
+	 * @param other CircularBuffer whose contents are to be copied.
+	 * 
+	 * @note
+	 * The copy constructor does not necessarily preserve the layout or capacity of the 'other'.
+	 * If you require this behavior, consider using the tagged copy constructor.
+	 */
+
 	constexpr CircularBuffer(const CircularBuffer& other):
 		CircularBuffer(other, other.select_on_container_copy_construction())
 	{
 
 	}
+	
+	/**
+	 * @brief
+	 * Shape "constructor".
+	 * 
+	 * Creates an empty buffer with a predefined 'capacity()' and 'begin_index()' 
+	 * 
+	 * @param shape The shape object definining the initial layout of the new buffer.
+	 * @param al    The allocator to use for the new buffer.
+	 */
+	static constexpr CircularBuffer from_shape(shape_type shape, const Allocator& al = Allocator())
+	{	
+		return CircularBuffer(detail::shape_tag, shape, al);
+	}
 
 
+	/**
+	 * @brief
+	 * Copy assignment operator. Replaces the contents with a copy of the contents of other.
+	 * 
+	 * @param other CircularBuffer whose contents are to be copied.
+	 * 
+	 * @note
+	 * If std::allocator_traits<allocator_type>::propagate_on_container_copy_assignment::value is true,
+	 * the allocator of *this is replaced by a copy of that of other. If the allocator of *this after
+	 * assignment would compare unequal to its old value, the old allocator is used to deallocate the memory,
+	 * then the new allocator is used to allocate it before copying the elements.
+	 * Otherwise, the memory owned by *this may be reused when possible.
+	 * In any case, the elements originally belong to *this may be either destroyed or replaced by element-wise copy-assignment. 
+	 */
 	constexpr CircularBuffer& operator=(const CircularBuffer& other)
 	{
 		if constexpr(propagate_on_container_copy_assignment && !is_always_equal)
@@ -2177,7 +2590,10 @@ public:
 			if (alloc() != other.alloc())
 			{
 				clear_fast();
-				deallocate(data_, capacity());
+				if(data_)
+				{
+					deallocate(data_, capacity());
+				}
 				cap_ = 0;
 				CircularBuffer tmp(other, other.alloc());
 				alloc() = tmp.alloc();
@@ -2208,44 +2624,44 @@ public:
 		return *this;
 	}
 
-	constexpr CircularBuffer& operator=(std::initializer_list<T> init)
-	{
-		assign(init);
-		return *this;
-	}
-private:
-
-	constexpr void do_fast_move_assignment(CircularBuffer&& other)
-	{
-		assert(propagate_on_container_move_assignment || is_always_equal || alloc() == other.alloc());
-		CircularBuffer tmp;
-		
-		if constexpr (propagate_on_container_move_assignment)
-		{
-			tmp.alloc() = std::exchange(alloc(), other.alloc());
-		}
-		tmp.data_ = std::exchange(data_, std::exchange(other.data_, nullptr));
-		tmp.cap_ = std::exchange(cap_, std::exchange(other.cap_, 0));
-		tmp.size_ = std::exchange(size_, std::exchange(other.size_, 0));
-		tmp.start_ = std::exchange(start_, std::exchange(other.start_, 0));
-	}
-
-public:
+	/**
+	 * @brief
+	 * 
+	 * @param 
+	 * 
+	 */
 	constexpr CircularBuffer& operator=(CircularBuffer&& other) noexcept(propagate_on_container_move_assignment || is_always_equal)
 	{
+
+		if(data_)
+		{
+			clear_fast();
+			deallocate(data_, capacity());
+			cap_ = 0;
+		}
+		constexpr auto do_fast_move_assignment = [](CircularBuffer& self, CircularBuffer&& other)
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT(propagate_on_container_move_assignment || is_always_equal || self.alloc() == other.alloc());
+
+			if constexpr (propagate_on_container_move_assignment)
+			{
+				self.alloc() = other.alloc();
+			}
+			self.data_  = std::exchange(other.data_, nullptr);
+			self.cap_   = std::exchange(other.cap_, 0);
+			self.size_  = std::exchange(other.size_, 0);
+			self.start_ = std::exchange(other.start_, 0);
+		};
 		if constexpr (propagate_on_container_move_assignment || is_always_equal)
 		{
-			do_fast_move_assignment(std::move(other));
+			do_fast_move_assignment(*this, std::move(other));
 		}
 		else if (alloc() == other.alloc())
 		{
-			do_fast_move_assignment(std::move(other));
+			do_fast_move_assignment(*this, std::move(other));
 		}
 		else
 		{
-			deallocate(data_, capacity());
-			data_ = nullptr;
-			cap_ = 0;
 			auto new_cap = other.size();
 			data_ = allocate(new_cap);
 			cap_ = new_cap;
@@ -2255,15 +2671,53 @@ public:
 		return *this;
 	}
 
+	/**
+	 * @brief
+	 * Replaces the contents with those identified by initializer list 'init'.
+	 * 
+	 * @param init The initializer list whose contents are used to initialize the buffer.
+	 * 
+	 */
+	constexpr CircularBuffer& operator=(std::initializer_list<T> init)
+	{
+		assign(init);
+		return *this;
+	}
+	/**
+	 * @brief
+	 * Returns a copy of *this with the layout preserved.  Shorthand for 'CircularBuffer(tags::preserve_layout, *this)'.
+	 */
+	constexpr CircularBuffer exact_copy() const
+	{
+		return CircularBuffer(tags::preserve_layout, *this);
+	}
 
 
 	/* Assignment */
+
+	/**
+	 * @brief
+	 * Replaces the contents with count copies of value value
+	 * 
+	 * @param count The number of elements to assign.
+	 * @param value The object to copy-initialize the new elements from.
+	 */
 	constexpr void assign(size_type count, const T& value)
 	{
 		clear_fast();
 		assign_empty(count, value);
 	}
 
+	/**
+	 * @brief
+	 * Replaces the contents with copies of those in the range [first, last).
+	 * 
+	 * @param first Iterator to the first value in the range of elements to be copied.
+	 * @param last  Iterator to one past the last value in the range of elements to be copied.
+	 * 
+	 * @note
+	 * The behavior is undefined if either argument is an iterator into *this. 
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -2278,7 +2732,7 @@ public:
 		clear_fast();
 		if constexpr (std::is_convertible_v<typename std::iterator_traits<It>::iterator_category, std::forward_iterator_tag>)
 		{
-			assign_empty(first, last, std::distance(first, last));
+			assign_empty(first, last, size_from_iterator_difference(std::distance(first, last)));
 		}
 		else
 		{
@@ -2286,31 +2740,51 @@ public:
 		}
 	}
 
+	/**
+	 * @brief Replaces the contents with the elements from the initializer list 'init'.
+	 * 
+	 * @param init The initializer list whose contents are used to assign the buffer.
+	 */
 	constexpr void assign(std::initializer_list<T> ilist) {
 		assign(ilist.begin(), ilist.end());
 	}
-
-	constexpr void clear() noexcept {
-		clear_fast();
-	}
-	/* Allocator */
+	
+	/**
+	 * @brief Returns the allocator associated with the container. 
+	 */
 	constexpr allocator_type get_allocator() const noexcept { return alloc(); }
 
 	/* Iterators */
-	constexpr iterator begin() {
+
+	/**
+	 * @brief Returns a mutable iterator to the first element of the buffer.  
+	 */
+	constexpr iterator begin() noexcept {
 		return iterator(data_, cap_, start_, false);
 	}
 
-	constexpr const_iterator begin() const {
+	/**
+	 * @brief Returns a const iterator to the first element of the buffer.  
+	 */
+	constexpr const_iterator begin() const noexcept {
 		return const_iterator(data_, cap_, start_, false);
 	}
 
-	constexpr const_iterator cbegin() const {
+	/**
+	 * @brief Returns a const iterator to the first element of the buffer.  
+	 */
+	constexpr const_iterator cbegin() const noexcept {
 		return const_iterator(data_, cap_, start_, false);
 	}
 
 
-	constexpr iterator end() {
+	/**
+	 * @brief
+	 * Returns a mutable iterator to the element following the last element of the buffer.
+	 * 
+	 * This element acts as a placeholder; attempting to access it results in undefined behavior. 
+	 */
+	constexpr iterator end() noexcept {
 		if(cap_ - start_ > size_) {
 			return iterator(data_, cap_, start_ + size_, false);
 		} else {
@@ -2318,51 +2792,124 @@ public:
 		}
 	}
 
-	constexpr const_iterator end() const {
+	/**
+	 * @brief
+	 * Returns a const iterator to the element following the last element of the buffer.
+	 * 
+	 * This element acts as a placeholder; attempting to access it results in undefined behavior. 
+	 */
+	constexpr const_iterator end() const noexcept {
 		return cend();
 	}
 
-	constexpr const_iterator cend() const {
+	/**
+	 * @brief
+	 * Returns a const iterator to the element following the last element of the buffer.
+	 * 
+	 * This element acts as a placeholder; attempting to access it results in undefined behavior. 
+	 */
+	constexpr const_iterator cend() const noexcept {
 		return const_cast<CircularBuffer*>(this)->end();
 	}
 
 
-	constexpr reverse_iterator rbegin() {
+	/**
+	 * @brief
+	 * Returns a mutable reverse iterator to the first element of the reversed buffer.
+	 * 
+	 * It corresponds to the last element of the non-reversed buffer.
+	 * If the buffer is empty, the returned iterator is equal to rend(). 
+	 */
+	constexpr reverse_iterator rbegin() noexcept {
 		return std::make_reverse_iterator(end());
 	}
 
-	constexpr const_reverse_iterator rbegin() const {
+	/**
+	 * @brief
+	 * Returns a const reverse iterator to the first element of the reversed buffer.
+	 * 
+	 * It corresponds to the last element of the non-reversed buffer.
+	 * If the buffer is empty, the returned iterator is equal to rend(). 
+	 */
+	constexpr const_reverse_iterator rbegin() const noexcept {
 		return std::make_reverse_iterator(end());
 	}
 
-	constexpr const_reverse_iterator crbegin() const {
+	/**
+	 * @brief
+	 * Returns a const reverse iterator to the first element of the reversed buffer.
+	 * 
+	 * It corresponds to the last element of the non-reversed buffer.
+	 * If the buffer is empty, the returned iterator is equal to rend(). 
+	 */
+	constexpr const_reverse_iterator crbegin() const noexcept {
 		return std::make_reverse_iterator(end());
 	}
 
 
-	constexpr reverse_iterator rend() {
+	/**
+	 * @brief
+	 * Returns a mutable reverse iterator to the element following the last element of the reversed buffer.
+	 * 
+	 * It corresponds to the element preceding the first element of the non-reversed buffer.
+	 * This element acts as a placeholder, attempting to access it results in undefined behavior. 
+	 */
+	constexpr reverse_iterator rend() noexcept {
 		return std::make_reverse_iterator(begin());
 	}
 
-	constexpr const_reverse_iterator rend() const {
+	/**
+	 * @brief
+	 * Returns a const reverse iterator to the element following the last element of the reversed buffer.
+	 * 
+	 * It corresponds to the element preceding the first element of the non-reversed buffer.
+	 * This element acts as a placeholder, attempting to access it results in undefined behavior. 
+	 */
+	constexpr const_reverse_iterator rend() const noexcept {
 		return std::make_reverse_iterator(begin());
 	}
 
-	constexpr const_reverse_iterator crend() const {
+	/**
+	 * @brief
+	 * Returns a const reverse iterator to the element following the last element of the reversed buffer.
+	 * 
+	 * It corresponds to the element preceding the first element of the non-reversed buffer.
+	 * This element acts as a placeholder, attempting to access it results in undefined behavior. 
+	 */
+	constexpr const_reverse_iterator crend() const noexcept {
 		return std::make_reverse_iterator(begin());
 	}
 
-	/* Accessors */
 
+	/**
+	 * @brief
+	 * Returns a mutable reference to the element at specified location 'index'. No bounds checking is performed. 
+	 * 
+	 * @param index The index into the logical buffer of the element to access.
+	 */
 	constexpr reference operator[](size_type index) {
 		return begin()[index];
 	}
 
+	/**
+	 * @brief
+	 * Returns a const reference to the element at specified location 'index'. No bounds checking is performed. 
+	 * 
+	 * @param index The index into the logical buffer of the element to access.
+	 */
 	constexpr const_reference operator[](size_type index) const {
 		return cbegin()[index];
 	}
 
 
+	/**
+	 * @brief
+	 * Returns a mutable reference to the element at specified location 'index', with bounds checking.
+	 * 
+	 * If 'index' is not within the range of the container, an exception of type std::out_of_range is thrown. 
+	 * 
+	 * @param index The index into the logical buffer of the element to access.
+	 */
 	constexpr reference at(size_type index) {
 		if(index > size()) {
 			throw std::out_of_range("tim::CircularBuffer::at()");
@@ -2370,6 +2917,14 @@ public:
 		return begin()[index];
 	}
 
+	/**
+	 * @brief
+	 * Returns a const reference to the element at specified location 'index', with bounds checking.
+	 * 
+	 * If 'index' is not within the range of the container, an exception of type std::out_of_range is thrown. 
+	 * 
+	 * @param index The index into the logical buffer of the element to access.
+	 */
 	constexpr const_reference at(size_type index) const {
 		if(index > size()) {
 			throw std::out_of_range("tim::CircularBuffer::at()");
@@ -2377,43 +2932,160 @@ public:
 		return begin()[index];
 	}
 
+	/**
+	 * @brief
+	 * Returns a const reference to the first element in the container.
+	 * 
+	 * Calling front on an empty container is undefined. 
+	 */
 	constexpr const_reference front() const { return *begin(); }
+
+	/**
+	 * @brief
+	 * Returns a mutable reference to the first element in the container.
+	 * 
+	 * Calling front on an empty container is undefined. 
+	 */
 	constexpr reference front() { return *begin(); }
 
-	constexpr const_reference back() const { return *rbegin(); }
+	/**
+	 * @brief
+	 * Returns a const reference to the last element in the container.
+	 * 
+	 * Calling back on an empty container is undefined. 
+	 */
+	constexpr const_reference back() const noexcept { return *rbegin(); }
+
+	/**
+	 * @brief
+	 * Returns a mutable reference to the last element in the container.
+	 * 
+	 * Calling back on an empty container is undefined. 
+	 */
 	constexpr reference back() { return *rbegin(); }
 
+	/**
+	 * @brief
+	 * Returns the number of elements that the container has currently allocated space for. 
+	 */
 	constexpr size_type capacity() const noexcept { return cap_; }
 
+	/**
+	 * @brief
+	 * Returns the number of elements in the container, i.e. std::distance(begin(), end()). 
+	 */
 	constexpr size_type size() const noexcept{ return size_; }
 
+	/**
+	 * @brief
+	 * Checks if the container has no elements, i.e. whether begin() == end().
+	 * 
+	 * @return true if the container is empty, false otherwise
+	 */
 	[[nodiscard("empty() returns whether the buffer is empty and has no side effects.")]]
 	constexpr bool empty() const noexcept { return size() == 0u; }
 
+	/**
+	 * @brief
+	 * Returns the maximum number of elements the container is able to hold due to system or library implementation limitations,
+	 * i.e. std::distance(begin(), end()) for the largest possible container. 
+	 * 
+	 * @note
+	 * This value typically reflects the theoretical limit on the size of the container, at most std::numeric_limits<difference_type>::max().
+	 * @note
+	 * At runtime, the size of the container may be limited to a value smaller than max_size() by the amount of RAM available. 
+	 */
 	constexpr size_type max_size() const noexcept { return std::min((~size_type(0)) >> 1u, alloc_traits::max_size(alloc())); }
 
 	/**
-	 * Returns the index into the raw memory buffer of the first 
-	 * element.
+	 * @brief
+	 * Returns the index into the raw (physical) memory buffer of the first element (the physical index of logical index 0).
 	 */
-	constexpr size_type begin_index() const {
+	constexpr size_type begin_index() const
+	{
 		return start_;
 	}
 
 	/**
-	 * Returns the index into the raw memory buffer of the element
-	 * following the last element in the buffer.  If the buffer is either
-	 * empty or at capacity, this is equal to begin_index().
+	 * @brief
+	 * Returns the index into the raw memory buffer of the element following the last element in the buffer. 
+	 * 
+	 * If the buffer is either empty or at capacity, this is equal to begin_index().
 	 */
-	constexpr size_type end_index() const {
+	constexpr size_type end_index() const
+	{
 		return end().get_index();
 	}
 
-	
+	/**
+	 * @brief
+	 * Erases all elements from the container.
+	 * 
+	 * After this call, size() returns zero.
+	 * Invalidates any references, pointers, or iterators referring to contained elements.
+	 * Any past-the-end iterators are also invalidated.  
+	 * Leaves the capacity() of the buffer unchanged. 
+	 */
+	constexpr void clear() noexcept
+	{
+		clear_fast();
+	}
 
 	/**
 	 * @brief
 	 * Increase the capacity of the buffer to a value that's greater or equal to new_cap.
+	 * 
+	 * If new_cap is greater than the current capacity(), new storage is allocated, otherwise the method does nothing.
+	 * reserve() does not change the size of the buffer.
+	 * If new_cap is greater than capacity(), all iterators, including the past-the-end iterator, and all references to the elements are invalidated.
+	 * Otherwise, no iterators or references are invalidated.
+	 *
+	 * @param new_cap New capacity of the buffer.
+	 * 
+	 * @note
+	 * After calls to this function, the values of begin_index() and end_index() are unspecified.
+	 * @note
+	 * See reserve_front(), reserve_back() and for alternatives.
+	 */
+	constexpr void reserve(size_type new_cap) {
+		if(new_cap > max_size()) {
+			throw std::length_error("CircularBuffer::reserve() new capacity is greater than the buffer's max_size()");
+		}
+		if(this->capacity() >= new_cap) {
+			return;
+		}
+		this->reserve_slow(new_cap, 0);
+	}
+
+	/**
+	 * @brief
+	 * Increase the capacity of the buffer to a value that's greater or equal to new_cap.
+	 * 
+	 * If new_cap is greater than the current capacity(), new storage is allocated, otherwise the method does nothing.
+	 * reserve() does not change the size of the buffer.
+	 * If new_cap is greater than capacity(), all iterators, including the past-the-end iterator, and all references to the elements are invalidated.
+	 * Otherwise, no iterators or references are invalidated.
+	 *
+	 * @param new_cap New capacity of the buffer.
+	 * 
+	 * @note
+	 * Calls to this overload always preserve the value of end_index(); that is
+	 * the extra capacity is always added on the beginning of the buffer.
+	 * @note
+	 * See reserve_back() and reserve() for alternatives.
+	 */
+	constexpr void reserve_front(size_type new_cap) {
+		if (new_cap <= capacity())
+		{
+			return;
+		}
+		reserve_slow(new_cap, start_ + (new_cap - capacity()));
+	}
+
+	/**
+	 * @brief
+	 * Increase the capacity of the buffer to a value that's greater or equal to new_cap.
+	 * 
 	 * If new_cap is greater than the current capacity(), new storage is allocated, otherwise the method does nothing.
 	 * reserve() does not change the size of the buffer.
 	 * If new_cap is greater than capacity(), all iterators, including the past-the-end iterator, and all references to the elements are invalidated.
@@ -2423,20 +3095,30 @@ public:
 	 * 
 	 * @note
 	 * Calls to this overload always preserve the value of begin_index(); that is
-	 * the extra capacity is always added on the end of the buffer.  See reserve_front()
-	 * and reserve(size_type, size_type) for alternatives.
+	 * the extra capacity is always added on the end of the buffer.
+	 * @note
+	 * See reserve_back() and reserve() for alternatives.
 	 */
-	constexpr void reserve(size_type new_cap) {
-		if(new_cap > max_size()) {
-			throw std::length_error("CircularBuffer::reserve()");
-		}
-		if(this->capacity() >= new_cap) {
+	constexpr void reserve_back(size_type new_cap) {
+		if (new_cap <= capacity())
+		{
 			return;
 		}
-		this->reserve_slow(new_cap, this->start_);
+		reserve_slow(new_cap, start_);
 	}
 
-
+	/**
+	 * @brief
+	 * Requests the removal of unused capacity.
+	 * 
+	 * It is a non-binding request to reduce capacity() to size().
+	 * It depends on the implementation whether the request is fulfilled.
+	 * If reallocation occurs, all iterators, including the past the end iterator, and all references to the elements are invalidated.
+	 * If no reallocation takes place, no iterators or references are invalidated. 
+	 * 
+	 * @note
+	 * If an exception is thrown other than by T's move constructor, there are no effects. 
+	 */
 	constexpr void shrink_to_fit()
 	{
 		if (size() == capacity())
@@ -2455,11 +3137,12 @@ public:
 		}
 		commit(tmp);
 	}
-
+	
 	/**
 	 * @brief
 	 * Inserts elements from range [first, last) before pos.
 	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
 	 * 
 	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator,
@@ -2468,6 +3151,9 @@ public:
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
 	 * @param first Iterator to the first value in the range of elements to be inserted.
 	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 * 
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	template <
 		class It,
@@ -2486,7 +3172,7 @@ public:
 		const size_type index = pos - cbegin();
 		auto initial_size = size();
 		while(size() < capacity() && first != last) {
-			emplace_back(*first++);
+			emplace_back_fast(*first++);
 		}
 		size_type count_inserted = size() - initial_size;
 		if(first == last) {
@@ -2495,10 +3181,10 @@ public:
 		}
 		auto tmp = make_temporary_buffer(grow_size(this->capacity()));
 		// Write directly to the final destination position.
-		tmp.start_ = detail::add_modulo(tmp.capacity(), this->start_, size_from_iterator_difference(pos - cbegin()), count_inserted);
+		tmp.start_ = count_inserted + index;
 		for(;;) {
 			do {
-				tmp.emplace_back(*first++);
+				tmp.emplace_back_fast(*first++);
 			} while(first != last && tmp.capacity() - tmp.size() > this->capacity());
 			if(first == last) {
 				break;
@@ -2506,28 +3192,23 @@ public:
 			tmp.reserve_back(grow_size(tmp.capacity()));
 		}
 		// Append the elements we initially appended onto *this.
-		for(auto range: as_split_ranges(end() - count_inserted, end())) {
-			tmp.append_fast(
-				std::make_move_iterator(range.begin()), 
-				std::make_move_iterator(range.end())
-			);
+		for(auto range: detail::reversed(as_split_ranges(end() - count_inserted, end()).as_moving_ranges()))
+		{
+			tmp.prepend_fast(range.begin(), range.end());
 		}
 		// Then append the elements from the range that were initially at or after 'pos' from *this.
 		// (up to, but not including the elements we appended from [first, last)).
-		for(auto range: as_split_ranges(as_non_const_iterator(pos), this->end() - count_inserted)) {
-			tmp.append_fast(
-				std::make_move_iterator(range.begin()), 
-				std::make_move_iterator(range.end())
-			);
+		for(auto range: as_split_ranges(as_non_const_iterator(pos), this->end() - count_inserted).as_moving_ranges())
+		{
+			tmp.append_fast(range.begin(), range.end());
 		}
 		// Then prepend the elements preceding 'pos' from *this.
-		for(auto range: detail::reversed(as_split_ranges(this->begin(), as_non_const_iterator(pos)))) {
-			tmp.prepend_fast(
-				std::make_move_iterator(range.begin()), 
-				std::make_move_iterator(range.end())
-			);
+		for(auto range: detail::reversed(as_split_ranges(begin(), as_non_const_iterator(pos)).as_moving_ranges()))
+		{
+			tmp.prepend_fast(range.begin(), range.end());
 		}
-		this->commit(tmp);
+		assert(!tmp.storage_is_split());
+		commit(tmp);
 		return begin() + index;
 	}
 
@@ -2535,6 +3216,7 @@ public:
 	 * @brief
 	 * Inserts elements from range [first, last) before pos.
 	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
 	 * 
 	 * This overload only participates in overload resolution if InputIt qualifies as LegacyForwardIterator.
@@ -2544,6 +3226,8 @@ public:
 	 * @param first Iterator to the first value in the range of elements to be inserted.
 	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	template <
 		class It,
@@ -2556,7 +3240,7 @@ public:
 		> = false
 	>
 	constexpr iterator insert_move_back(const_iterator pos, It first, It last) {
-		size_type count = std::distance(first, last);
+		size_type count = size_from_iterator_difference(std::distance(first, last));
 		if(count <= this->capacity() - this->size()) {
 			return this->insert_move_back_fast(pos, first, last, count);
 		} else {
@@ -2568,15 +3252,14 @@ public:
 	 * @brief
 	 * Inserts the given element before pos.
 	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
 	 *
-	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator.
-	 * The behavior is undefined if first and last are iterators into *this.
-	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 * @param value The value to insert.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	template <class U, std::enable_if_t<std::is_same_v<T, std::remove_cvref_t<U>>, bool> = true>
 	constexpr iterator insert_move_back(const_iterator pos, U&& value) {
@@ -2589,12 +3272,15 @@ public:
 	 * @brief
 	 * Inserts 'count' copies of the given element before pos.
 	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
 	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 * @param count The number of elements to insert.
+	 * @param value The value of the inserted elements.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	constexpr iterator insert_move_back(const_iterator pos, size_type count, const T& value) {
 		auto range = detail::make_single_value_range(value, count);
@@ -2604,13 +3290,15 @@ public:
 	/**
 	 * @brief
 	 * Inserts the elements from the initialize list before pos.
-	 ** Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of end_index() will change accordingly (but begin_index() will be unchanged).
 	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 * @param ilist Initializer list containing the elements to be inserted.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	constexpr iterator insert_move_back(const_iterator pos, std::initializer_list<T> ilist) {
 		return insert_move_back(pos, ilist.begin(), ilist.end());
@@ -2622,6 +3310,7 @@ public:
 	 * @brief
 	 * Inserts elements from range [first, last) before pos.
 	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of begin_index() will change accordingly (but end_index() will be unchanged).
 	 * 
 	 * This overload only participates in overload resolution if InputIt qualifies as LegacyInputIterator,
@@ -2631,6 +3320,8 @@ public:
 	 * @param first Iterator to the first value in the range of elements to be inserted.
 	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	template <
 		class It,
@@ -2648,45 +3339,52 @@ public:
 		}
 		const size_type index = pos - cbegin();
 		auto initial_size = size();
+		bool split_before = storage_is_split();
 		while(size() < capacity() && first != last) {
-			emplace_front(*first++);
+			emplace_front_fast(*first++);
 		}
+		bool split_after = storage_is_split();
 		size_type count_inserted = size() - initial_size;
+		if(!split_before && split_after)
+		{
+			pos = begin() + (index + count_inserted);
+		}
 		if(first == last) {
-			std::reverse(begin() + initial_size, end());
-			std::rotate(as_non_const_iterator(pos), end() - count_inserted, end());
+			std::reverse(begin(), begin() + count_inserted);
+			std::rotate(begin(), begin() + count_inserted, as_non_const_iterator(pos));
 			return begin() + index;
 		}
+		// need to reallocate to fit everything.  Put the remaning elements into a temporary buffer and then
+		// copy everything over once we know how much space we need.
 		auto tmp = make_temporary_buffer(grow_size(this->capacity()));
+		tmp.start_ = index + count_inserted;
 		// Write directly to the final destination position.
-		if(this->start_ < count_inserted) {
-			tmp.start_ = tmp.capacity() - (count_inserted - this->start_);
-		} else {
-			tmp.start_ = this->start_ - count_inserted;
-		}
 		for(;;) {
+			// emplace into the buffer while there's still stuff to add, while also ensuring that there's enough space for
+			// the elements already contained in '*this'
 			do {
-				tmp.emplace_front(*first++);
-			} while(first != last && tmp.capacity() - tmp.size() > this->capacity());
+				tmp.emplace_back_fast(*first++);
+			} while(first != last && (tmp.capacity() - tmp.size()) > this->capacity());
 			if(first == last) {
 				break;
 			}
-			tmp.reserve_front(grow_size(tmp.capacity()));
+			tmp.reserve_back(grow_size(tmp.capacity()));
 		}
-		std::reverse(tmp.begin(), tmp.end());
-		for(auto range: detail::reversed(as_split_ranges(this->begin(), as_non_const_iterator(pos)))) {
-			tmp.prepend_fast(
-				std::make_move_iterator(range.begin()), 
-				std::make_move_iterator(range.end())
-			);
+		for(auto range: as_split_ranges(begin(), begin() + count_inserted).as_moving_ranges())
+		{
+			tmp.prepend_fast(range.rbegin(), range.rend());
 		}
-		for(auto range: as_split_ranges(as_non_const_iterator(pos), this->end())) {
-			tmp.append_fast(
-				std::make_move_iterator(range.begin()), 
-				std::make_move_iterator(range.end())
-			);
+		assert((begin() + count_inserted) <=  as_non_const_iterator(pos));
+		for(auto range: detail::reversed(as_split_ranges(begin() + count_inserted, as_non_const_iterator(pos)).as_moving_ranges()))
+		{
+			tmp.prepend_fast(range.begin(), range.end());
 		}
-		this->commit(tmp);
+		for(auto range: as_split_ranges(as_non_const_iterator(pos), end()).as_moving_ranges())
+		{
+			tmp.append_fast(range.begin(), range.end());
+		}
+		assert(!tmp.storage_is_split());
+		commit(tmp);
 		return begin() + index;
 	}
 
@@ -2697,6 +3395,7 @@ public:
 	 * @brief
 	 * Inserts elements from range [first, last) before pos.
 	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of begin_index() will change accordingly.
 	 *
 	 * This overload only participates in overload resolution if InputIt qualifies as LegacyForwardIterator.
@@ -2706,6 +3405,8 @@ public:
 	 * @param first Iterator to the first value in the range of elements to be inserted.
 	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	template <
 		class It,
@@ -2718,7 +3419,7 @@ public:
 		> = false
 	>
 	constexpr iterator insert_move_front(const_iterator pos, It first, It last) {
-		size_type count = std::distance(first, last);
+		size_type count = size_from_iterator_difference(std::distance(first, last));
 		if(count <= capacity() - size()) {
 			return insert_move_front_fast(pos, first, last, count);
 		} else {
@@ -2730,12 +3431,14 @@ public:
 	 * @brief
 	 * Inserts the given element before pos.
 	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted ivalue.
+	 * 
 	 * Note that this means the value of begin_index() will change accordingly.
 	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 * @param value The value to insert.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	template <class U, std::enable_if_t<std::is_same_v<T, std::remove_cvref_t<U>>, bool> = true>
 	constexpr iterator insert_move_front(const_iterator pos, U&& value) {
@@ -2748,12 +3451,15 @@ public:
 	 * @brief
 	 * Inserts 'count' copies of the given element before pos.
 	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of begin_index() will change accordingly.
 	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 * @param count The number of elements to insert.
+	 * @param value The value of the inserted elements.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	constexpr iterator insert_move_front(const_iterator pos, size_type count, const T& value) {
 		auto range = detail::make_single_value_range(value, count);
@@ -2764,12 +3470,14 @@ public:
 	 * @brief
 	 * Inserts the elements from the initialize list before pos.
 	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 * 
 	 * Note that this means the value of begin_index() will change accordingly.
 	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
+	 * @param ilist Initializer list containing the elements to be inserted.
 	 *
+	 * @note
+	 * If reallocation occurs, the values of begin_index() and end_index() are unspecified.
 	 */
 	constexpr iterator insert_move_front(const_iterator pos, std::initializer_list<T> ilist) {
 		return insert_move_front(pos, ilist.begin(), ilist.end());
@@ -2778,6 +3486,7 @@ public:
 	/**
 	 * @brief
 	 * Inserts elements from range [first, last) before pos.
+	 * 
 	 * If the number of elements before pos is less than the number of elements after pos, then 
 	 * the new values are inserted as if by calling insert_move_front(), otherwise they are inserted
 	 * as if by insert_move_back().
@@ -2788,7 +3497,6 @@ public:
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
 	 * @param first Iterator to the first value in the range of elements to be inserted.
 	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
-	 *
 	 */
 	template <class It>
 	constexpr iterator insert(const_iterator pos, It first, It last) {
@@ -2805,13 +3513,13 @@ public:
 	/**
 	 * @brief
 	 * Inserts the elements from the initialize list before pos.
+	 * 
 	 * If the number of elements before pos is less than the number of elements after pos, then 
 	 * the new values are inserted as if by calling insert_move_front(), otherwise they are inserted
 	 * as if by insert_move_back().
 	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
 	 * @param ilist initializer list containing the elements to be inserted.
-	 *
 	 */
 	constexpr iterator insert(const_iterator pos, std::initializer_list<T> ilist) {
 		return insert(pos, ilist.begin(), ilist.end());
@@ -2821,6 +3529,7 @@ public:
 	/**
 	 * @brief
 	 * Inserts the given element before pos.
+	 * 
 	 * If the number of elements before pos is less than the number of elements after pos, then 
 	 * the new value is inserted as if by calling insert_move_front(), otherwise they are inserted
 	 * as if by insert_move_back().
@@ -2829,23 +3538,17 @@ public:
 	 * The behavior is undefined if first and last are iterators into *this.
 	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
-	 *
+	 * @param value The value to insert.
 	 */
 	template <class U, std::enable_if_t<std::is_same_v<T, std::remove_cvref_t<U>>, bool> = true>
 	constexpr iterator insert(const_iterator pos, U&& value) {
 		return emplace(pos, std::forward<U>(value));
 	}
 
-
-
-
-	/* Emplacement */
-
 	/**
 	 * @brief
 	 * Inserts 'count' copies of the given element before pos.
+	 * 
 	 * If the number of elements before pos is less than the number of elements after pos, then 
 	 * the new values are inserted as if by calling insert_move_front(), otherwise they are inserted
 	 * as if by insert_move_back().
@@ -2854,9 +3557,8 @@ public:
 	 * The behavior is undefined if first and last are iterators into *this.
 	 *
 	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
-	 *
+	 * @param count The number of elements to insert.
+	 * @param value The value of the inserted elements.
 	 */
 	constexpr iterator insert(const_iterator pos, size_type count, const T& value) {
 		auto range = detail::make_single_value_range(value, count);
@@ -2866,14 +3568,27 @@ public:
 	/**
 	 * @brief
 	 * Emplaces the given element before pos.
+	 * 
 	 * If the number of elements before pos is less than the number of elements after pos, then 
 	 * the new value is emplaced as if by calling emplace_move_front(), otherwise they are inserted
 	 * as if by emplace_move_back().
 	 *
-	 * @param pos   Iterator before which the content will be inserted. pos may be the end() iterator.
-	 * @param first Iterator to the first value in the range of elements to be inserted.
-	 * @param last  Iterator to one past the last value in the range of elements to be inserted.
-	 *
+	 * @param pos  Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param args Arguments with which the new element is to be constructed.
+	 * 
+	 * @note
+	 * The element is constructed through std::allocator_traits::construct, which typically uses placement-new
+	 * to construct the element in-place at a location provided by the container.
+	 * However, if the required location has been occupied by an existing element, the inserted element is
+	 * constructed at another location at first, and then move assigned into the required location.
+	 * @note
+	 * The arguments args... are forwarded to the constructor as std::forward<Args>(args)....
+	 * args... may directly or indirectly refer to a value in the container.
+	 * @note
+	 * If the new size() is greater than capacity(), or if begin_index() after calling this function is greater
+	 * than before the call, all iterators and references are invalidated.
+	 * Otherwise, only the iterators and references before the insertion point remain valid.
+	 * The past-the-end iterator is also invalidated. 
 	 */
 	template <class ... Args>
 	constexpr iterator emplace(const_iterator pos, Args&& ... args) {
@@ -2890,6 +3605,27 @@ public:
 	}
 
 
+	/**
+	 * @brief
+	 * Emplaces the given element before pos.
+	 * Elements in the range [pos, end()) are moved to make room for the to-be-inserted range.
+	 *
+	 * @param pos  Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param args Arguments with which the new element is to be constructed.
+	 * 
+	 * @note
+	 * The element is constructed through std::allocator_traits::construct, which typically uses placement-new
+	 * to construct the element in-place at a location provided by the container.
+	 * However, if the required location has been occupied by an existing element, the inserted element is
+	 * constructed at another location at first, and then move assigned into the required location.
+	 * @note
+	 * The arguments args... are forwarded to the constructor as std::forward<Args>(args)....
+	 * args... may directly or indirectly refer to a value in the container.
+	 * @note
+	 * If the new size() is greater than capacity() all iterators and references are invalidated.
+	 * Otherwise, only the iterators and references before the insertion point remain valid.
+	 * The past-the-end iterator is also invalidated. 
+	 */
 	template <class ... Args>
 	constexpr iterator emplace_move_back(const_iterator pos, Args&& ... args) {
 		if (pos == end())
@@ -2910,6 +3646,70 @@ public:
 		return p;
 	}
 
+	/**
+	 * @brief
+	 * Emplaces the given element before pos.
+	 * Elements in the range [begin(), pos) are moved to make room for the to-be-inserted range.
+	 *
+	 * @param pos  Iterator before which the content will be inserted. pos may be the end() iterator.
+	 * @param args Arguments with which the new element is to be constructed.
+	 * 
+	 * @note
+	 * The element is constructed through std::allocator_traits::construct, which typically uses placement-new
+	 * to construct the element in-place at a location provided by the container.
+	 * However, if the required location has been occupied by an existing element, the inserted element is
+	 * constructed at another location at first, and then move assigned into the required location.
+	 * @note
+	 * The arguments args... are forwarded to the constructor as std::forward<Args>(args)....
+	 * args... may directly or indirectly refer to a value in the container.
+	 * @note
+	 * If the new size() is greater than capacity(), or if begin_index() after calling this function is greater
+	 * than before the call, all iterators and references are invalidated.
+	 * Otherwise, only the iterators and references after the insertion point remain valid.
+	 */
+	template <class ... Args>
+	constexpr iterator emplace_move_front(const_iterator pos, Args&& ... args) {
+		if (pos == begin())
+		{
+			emplace_front(std::forward<Args>(args)...);
+			return begin();
+		}
+		else if(pos == end())
+		{
+			emplace_back(std::forward<Args>(args)...);
+		}
+		else if(capacity() == size())
+		{
+			return emplace_reallocate(pos, std::forward<Args>(args)...);
+		}
+		assert(size() != 0);
+		auto idx = pos - begin();
+		emplace_front(std::move(front()));
+		auto p = begin() + idx;
+		copy_ranges(
+			as_moving_split_ranges(std::next(begin(), 2), std::next(p)), 
+			as_split_ranges(std::next(begin()), p));
+		*p = value_type(std::forward<Args>(args)...);
+		return p;
+	}
+
+	/**
+	 * @brief
+	 * Emplaces the given element at the past-the-end position in the buffer.
+	 *
+	 * @param args Arguments with which the new element is to be constructed.
+	 * 
+	 * @note
+	 * The element is constructed through std::allocator_traits::construct, which typically uses placement-new
+	 * to construct the element in-place.
+	 * @note
+	 * The arguments args... are forwarded to the constructor as std::forward<Args>(args)....
+	 * args... may directly or indirectly refer to a value in the container.
+	 * @note
+	 * If the new size() is greater than capacity(), all iterators and references are invalidated.
+	 * Otherwise, only the iterators and references before the insertion point remain valid.
+	 * The past-the-end iterator is also invalidated. 
+	 */
 	template <class ... Args>
 	constexpr reference emplace_back(Args&& ... args) {
 		if(size() < capacity()) {
@@ -2933,28 +3733,22 @@ public:
 		return back();
 	}
 
-	template <class ... Args>
-	constexpr iterator emplace_move_front(const_iterator pos, Args&& ... args) {
-		if (pos == begin())
-		{
-			emplace_front(std::forward<Args>(args)...);
-			return begin();
-		}
-		if(capacity() == size())
-		{
-			return emplace_reallocate(pos, std::forward<Args>(args)...);
-		}
-		auto idx = pos - begin();
-		emplace_front(std::move(front()));
-		auto p = begin() + idx;
-		copy_ranges(
-			as_moving_split_ranges(std::next(begin(), 2), p), 
-			as_split_ranges(std::next(begin()), std::prev(p)));
-		*p = value_type(std::forward<Args>(args)...);
-		return p;
-	}
-
-
+	/**
+	 * @brief
+	 * Emplaces the given element at the beginning of the buffer.
+	 *
+	 * @param args Arguments with which the new element is to be constructed.
+	 * 
+	 * @note
+	 * The element is constructed through std::allocator_traits::construct, which typically uses placement-new
+	 * to construct the element in-place.
+	 * @note
+	 * The arguments args... are forwarded to the constructor as std::forward<Args>(args)....
+	 * args... may directly or indirectly refer to a value in the container.
+	 * @note
+	 * If the new size() is greater than capacity(), or if begin_index() after calling this function is greater
+	 * than before the call, all iterators and references are invalidated.
+	 */
 	template <class ... Args>
 	constexpr reference emplace_front(Args&& ... args) {
 		if(size() < capacity()) {
@@ -2971,11 +3765,25 @@ public:
 		return front();
 	}
 
-	/* erasure operations */
 
+	/**
+	 * @brief
+	 * Removes the element at 'pos'. 
+	 * 
+	 * If std::distance(begin(), pos) < std::distance(pos, end()) then the element is erased as if by calling
+	 * erase_move_front(), otherwise the erasure proceeds as if by calling erase_move_back().
+	 * If std::distance(begin(), pos) < std::distance(pos, end()), then iterators and references at or before the point of the erasure are invalidated,
+	 * otherwise iterators and references at or after the point of the erasure are invalidated.
+	 * Additionally, if begin_index() after calling this function is less than its value before calling the function, then all iterators (but not necessarily
+	 * references) are invalidated.
+	 * The iterator pos must be valid and dereferenceable.
+	 * Thus the end() iterator (which is valid, but is not dereferenceable) cannot be used as a value for pos.
+	 * 
+	 * @param pos Iterator to the to-be-erased element.
+	 */
 	constexpr iterator erase(const_iterator pos)
 	{
-		assert(pos != end());
+		TIM_CIRCULAR_BUFFER_ASSERT(pos != end());
 		size_type count_before = pos - begin();
 		size_type count_after = (size() - count_before) - 1;
 		if(count_before < count_after)
@@ -2988,12 +3796,23 @@ public:
 		}
 	}
 	
+	/**
+	 * @brief
+	 * Removes the element at 'pos'.  
+	 * Elements in the range [pos, end()) are shifted to occupy the erased space.
+	 * 
+	 * Iterators and references at or after the point of the erasure are invalidated.
+	 * The iterator pos must be valid and dereferenceable.
+	 * Thus the end() iterator (which is valid, but is not dereferenceable) cannot be used as a value for pos.
+	 * 
+	 * @param pos Iterator to the to-be-erased element.
+	 */
 	constexpr iterator erase_move_back(const_iterator pos)
 	{
 		auto p = as_non_const_iterator(pos);
 		auto ranges = as_split_ranges(p, end());
-		assert(ranges.size() <= 2);
-		assert(ranges.size() != 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges.size() <= 2);
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges.size() != 0);
 		std::move(std::next(ranges[0].begin()), ranges[0].end(), ranges[0].begin());
 		if (ranges.size() == 1)
 		{
@@ -3001,26 +3820,39 @@ public:
 			destroy(ranges[0].end() - 1);
 			return p;
 		}
-		assert(ranges.size() == 2);
-		assert(ranges[1].size() != 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges.size() == 2);
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges[1].size() != 0);
 		ranges[0].end()[-1] = std::move(*ranges[1].begin());
 		std::move(std::next(ranges[1].begin()), ranges[1].end(), ranges[1].begin());
 		--size_;
 		destroy(ranges[1].end() - 1);
 		return p;
 	}
-
+	
+	/**
+	 * @brief
+	 * Removes the element at 'pos'.  
+	 * Elements in the range [begin(), pos) are shifted to occupy the erased space.
+	 * 
+	 * Iterators and references at or before the point of the erasure are invalidated.
+	 * Additionally, if begin_index() after calling this function is less than its value before calling the function, then all iterators (but not necessarily
+	 * references) are invalidated.
+	 * The iterator pos must be valid and dereferenceable.
+	 * Thus the end() iterator (which is valid, but is not dereferenceable) cannot be used as a value for pos.
+	 * 
+	 * @param pos Iterator to the to-be-erased element.
+	 */
 	constexpr iterator erase_move_front(const_iterator pos)
 	{
 		auto p = as_non_const_iterator(pos);
 		auto ranges = as_split_ranges(begin(), std::next(p));
-		assert(ranges.size() <= 2);
-		assert(ranges.size() != 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges.size() <= 2);
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges.size() != 0);
 		switch (ranges.size())
 		{
 		case 2:
-			assert(ranges[1].size() != 0);
-			assert(ranges[0].size() != 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(ranges[1].size() != 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(ranges[0].size() != 0);
 			std::move_backward(ranges[1].begin(), ranges[1].end()-1, ranges[1].end());
 			*ranges[1].begin() = std::move(ranges[0].end()[-1]);
 			[[fallthrough]];
@@ -3028,7 +3860,7 @@ public:
 			std::move_backward(ranges[0].begin(), ranges[0].end()-1, ranges[0].end());
 			break;
 		default:
-			assert(false);
+			TIM_CIRCULAR_BUFFER_ASSERT_UNREACHABLE();
 			break;
 		}
 		destroy(ranges[0].begin());
@@ -3042,6 +3874,22 @@ public:
 		return std::next(p);
 	}
 
+	/**
+	 * @brief
+	 * Removes the elements in the range [first, last).
+	 * 
+	 * If std::distance(begin(), first) < std::distance(last, end()) then the element is erased as if by calling
+	 * erase_move_front(), otherwise the erasure proceeds as if by calling erase_move_back().
+	 * If std::distance(begin(), first) < std::distance(last, end()), then iterators and references at or before the point of the erasure are invalidated,
+	 * otherwise iterators and references at or after the point of the erasure are invalidated.
+	 * Additionally, if begin_index() after calling this function is less than its value before calling the function, then all iterators (but not necessarily
+	 * references) are invalidated.
+	 * The iterator pos must be valid and dereferenceable.
+	 * Thus the end() iterator (which is valid, but is not dereferenceable) cannot be used as a value for 'first' unless 'first == last'.
+	 * 
+	 * @param first Iterator to beginning of the to-be-erased erased.
+	 * @param last  Iterator past the last element of the to-be-erased erased.
+	 */
 	constexpr iterator erase(const_iterator start, const_iterator stop)
 	{
 		size_type count_before = start - begin();
@@ -3055,7 +3903,19 @@ public:
 			return erase_move_back(start, stop);
 		}
 	}
-	
+
+	/**
+	 * @brief
+	 * Removes the elements in the range [first, last).
+	 * Elements in the range [last, end()) are shifted to occupy the erased space.
+	 * 
+	 * Iterators and references at or after the point of the erasure are invalidated.
+	 * The iterator pos must be valid and dereferenceable.
+	 * Thus the end() iterator (which is valid, but is not dereferenceable) cannot be used as a value for 'first' unless 'first == last'.
+	 * 
+	 * @param first Iterator to beginning of the to-be-erased erased.
+	 * @param last  Iterator past the last element of the to-be-erased erased.
+	 */
 	constexpr iterator erase_move_back(const_iterator start, const_iterator stop)
 	{
 		auto start_pos = as_non_const_iterator(start);
@@ -3065,7 +3925,23 @@ public:
 		pop_back_n(stop_pos - start_pos);
 		return start_pos;
 	}
-
+	/**
+	 * @brief
+	 * Removes the elements in the range [first, last).
+	 * Elements in the range [begin(), pos) are shifted to occupy the erased space.
+	 * 
+	 * If std::distance(begin(), first) < std::distance(last, end()) then the element is erased as if by calling
+	 * erase_move_front(), otherwise the erasure proceeds as if by calling erase_move_back().
+	 * If std::distance(begin(), first) < std::distance(last, end()), then iterators and references at or before the point of the erasure are invalidated,
+	 * otherwise iterators and references at or after the point of the erasure are invalidated.
+	 * Additionally, if begin_index() after calling this function is less than its value before calling the function, then all iterators (but not necessarily
+	 * references) are invalidated.
+	 * The iterator pos must be valid and dereferenceable.
+	 * Thus the end() iterator (which is valid, but is not dereferenceable) cannot be used as a value for 'first' unless 'first == last'.
+	 * 
+	 * @param first Iterator to beginning of the to-be-erased erased.
+	 * @param last  Iterator past the last element of the to-be-erased erased.
+	 */
 	constexpr iterator erase_move_front(const_iterator start, const_iterator stop)
 	{
 		auto start_pos = as_non_const_iterator(start);
@@ -3076,48 +3952,177 @@ public:
 		return stop_pos;
 	}
 
+	/**
+	 * @brief
+	 * Erases all elements for which 'pred' returns true.
+	 * 
+	 * @param pred Predicate function object which returns 'true' for elements that should be erased.
+	 * 
+	 * @note
+	 * After calling this function, the values of begin_index() and end_index() are unspecified.
+	 * @note
+	 * The expression pred(v) must be convertible to bool for every argument v of type (possibly const) T,
+	 * regardless of value category, and must not modify v.
+	 * Thus, a parameter type of T& is not allowed, nor is T unless for T a move is equivalent to a copy.
+	 */
 	template <class Pred>
 	constexpr size_type erase_if(Pred pred)
 	{
+		const size_type size_at_start = size();
 		auto ranges = get_ranges();
-		auto front_count = size_from_iterator_difference(ranges[0].rend() - std::remove_if(ranges[0].rbegin(), ranges[0].rend(), pred));
-		auto back_count = size_from_iterator_difference(ranges[1].end() - std::remove_if(ranges[1].begin(), ranges[1].end(), pred));
-		pop_front_n(front_count);
-		pop_back_n(back_count);
-		return back_count + front_count;
+		if(ranges.size() == 2)
+		{
+			auto front_pos = std::find_if(ranges[0].begin(), ranges[0].end(), std::not_fn(pred));
+			pop_front_n(size_from_iterator_difference(front_pos - ranges[0].begin()));
+			if (front_pos == ranges[0].end())
+			{
+				ranges[0] = ranges[1];
+				goto one_range;
+			}
+			auto back_pos = std::find_if(ranges[1].rbegin(), ranges[1].rend(), std::not_fn(pred));
+			pop_back_n(size_from_iterator_difference(back_pos - ranges[1].rbegin()));
+			if (back_pos == ranges[1].rend())
+			{
+				goto one_range;
+			}
+			auto [first, last] = detail::bidirectional_remove_if(begin(), end(), pred);
+			auto front_count = first - begin();
+			auto back_count = end() - last;
+			pop_front_n(front_count);
+			pop_back_n(back_count);
+		}
+		else if (ranges.size() == 1)
+		{
+		one_range:
+			auto [first, last] = detail::bidirectional_remove_if(ranges[0].begin(), ranges[0].end(), pred);
+			if (first == last)
+			{
+				clear_fast();
+				return size_at_start;
+			}
+			for (auto p = ranges[0].begin(); p != first; ++p)
+			{
+				destroy(std::addressof(*p));
+			}
+			for (auto p = last; p != ranges[0].end(); ++p)
+			{
+				destroy(std::addressof(*p));
+			}
+			start_ = size_from_iterator_difference(first - data_);
+			size_ = size_from_iterator_difference(last - first);
+		}
+		return size_at_start - size();
 	}
 	
-	/* front/back operations */
+	/**
+	 * @brief
+	 * Appends the given element value to the end of the container. 
+	 * The new element is initialized as a copy of value.
+	 * 
+	 * @param value The value of the element to append.
+	 * 
+	 * @note
+	 * T must meet the requirements of CopyInsertable in order to use overload.
+	 * @note
+	 * If the new size() is greater than capacity() then all iterators and references (including the past-the-end iterator) are invalidated.
+	 * Otherwise only the past-the-end iterator is invalidated. 
+	 */
 	constexpr void push_back(const T& value)
 	{
 		emplace_back(value);
 	}
 
+	/**
+	 * @brief
+	 * Appends the given element value to the end of the container. 
+	 * 'value' is moved into the new element.
+	 * 
+	 * @param value The value of the element to append.
+	 * 
+	 * @note
+	 * T must meet the requirements of MoveInsertable in order to use overload.
+	 * @note
+	 * If the new size() is greater than capacity() then all iterators and references (including the past-the-end iterator) are invalidated.
+	 * Otherwise only the past-the-end iterator is invalidated. 
+	 * @note
+	 * If an exception is thrown (which can be due to Allocator::allocate() or element copy/move constructor/assignment), this function has no effect (strong exception guarantee).
+	 * @note
+	 * If T's move constructor is not noexcept and T is not CopyInsertable into *this, the implementation will use the throwing move constructor.
+	 * If it throws, the guarantee is waived and the effects are unspecified. 
+	 */
 	constexpr void push_back(T&& value)
 	{
 		emplace_back(std::move(value));
 	}
-	
+
+	/**
+	 * @brief
+	 * Prepends the given element value to the beginning of the container. 
+	 * The new element is initialized as a copy of value.
+	 * 
+	 * @param value The value of the element to prepend.
+	 * 
+	 * @note
+	 * T must meet the requirements of CopyInsertable in order to use overload.
+	 * @note
+	 * If the new size() is greater than capacity(), or if the new begin_index() is greater than its previous value,
+	 * then all iterators and references are invalidated.
+	 * Otherwise no iterators are invalidated. 
+	 */
 	constexpr void push_front(const T& value)
 	{
 		emplace_front(value);
 	}
 
+	/**
+	 * @brief
+	 * Prepends the given element value to the beginning of the container. 
+	 * The new element is initialized as a copy of value.
+	 * 
+	 * @param value The value of the element to prepend.
+	 * 
+	 * @note
+	 * T must meet the requirements of CopyInsertable in order to use overload.
+	 * @note
+	 * If the new size() is greater than capacity(), or if the new begin_index() is greater than its previous value,
+	 * then all iterators and references are invalidated.
+	 * Otherwise no iterators are invalidated. 
+	 * @note
+	 * If an exception is thrown (which can be due to Allocator::allocate() or element copy/move constructor/assignment), this function has no effect (strong exception guarantee).
+	 * @note
+	 * If T's move constructor is not noexcept and T is not CopyInsertable into *this, the implementation will use the throwing move constructor.
+	 * If it throws, the guarantee is waived and the effects are unspecified. 
+	 */
 	constexpr void push_front(T&& value)
 	{
 		emplace_front(std::move(value));
 	}
 
+	/**
+	 * @brief
+	 * Removes the last element of the container.
+	 * 
+	 * Calling pop_back on an empty container results in undefined behavior.
+	 * Iterators and references to the last element, as well as the end() iterator, are invalidated. 
+	 */
 	constexpr void pop_back()
 	{
-		assert(size() != 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(size() != 0);
 		--size_;
 		destroy(end().get_pointer());
 	}
 
+	/**
+	 * @brief
+	 * Removes the last 'count' elements from the container.
+	 * 
+	 * If 'count' is zero then there are no effects.
+	 * If 'count' is non-zero, then calling pop_back_n on an empty container results in undefined behavior.
+	 * Additionally, if 'count' is non-zero, iterators and references to the last 'count' elements, as well as the end() iterator, are invalidated.
+	 */
 	constexpr void pop_back_n(size_type count)
 	{
-		assert(size() >= count);
+		TIM_CIRCULAR_BUFFER_ASSERT(size() >= count);
 		for (const auto& r : detail::reversed(get_ranges().last(count)))
 		{
 			for (T& item : detail::reversed(r))
@@ -3128,9 +4133,17 @@ public:
 		size_ -= count;
 	}
 
+	/**
+	 * @brief
+	 * Removes the first element of the container.
+	 * 
+	 * Calling pop_front on an empty container results in undefined behavior.
+	 * If the new begin_index() is less than its previous value then all iterators and references are invalidated.
+	 * Otherwise only iterators and references to the first element are invalidated. 
+	 */
 	constexpr void pop_front()
 	{
-		assert(size() != 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(size() != 0);
 		destroy(begin().get_pointer());
 		--size_;
 		auto new_start = start_ + 1;
@@ -3141,10 +4154,19 @@ public:
 		start_ = new_start;
 	}
 
+	/**
+	 * @brief
+	 * Removes the first 'count' elements from the container.
+	 * 
+	 * If 'count' is zero then there are no effects.
+	 * If 'count' is non-zero, then calling pop_front_n on an empty container results in undefined behavior.
+	 * If the new begin_index() is less than its previous value then all iterators and references are invalidated.
+	 * Otherwise only iterators and references to the first 'count' elements are invalidated. 
+	 */
 	constexpr void pop_front_n(size_type count)
 	{
-		assert(size() >= count);
-		auto new_begin_index = (begin() + count).get_index();
+		TIM_CIRCULAR_BUFFER_ASSERT(size() >= count);
+		auto new_begin_index = compute_offset(begin_index(), count, capacity());
 		for (const auto& r : get_ranges().first(count))
 		{
 			for (T& item : r)
@@ -3156,6 +4178,22 @@ public:
 		start_ = new_begin_index;
 	}
 
+	/**
+	 * @brief
+	 * Resizes the container to contain count elements.
+	 * 
+	 * If the current size is greater than count, the container is reduced to its first count elements.
+	 * If the current size is less than count, additional default-inserted elements are appended.
+	 * 
+	 * @param count The new size of the container.
+	 * 
+	 * @note
+	 * T must meet the requirements of MoveInsertable and DefaultInsertable in order to use overload.
+	 * If an exception is thrown, this function has no effect (strong exception guarantee). 
+	 * @note
+	 * If T's move constructor is not noexcept and T is not CopyInsertable into *this, the throwing move constructor will be used.
+	 * If it throws, the guarantee is waived and the effects are unspecified.
+	 */
 	constexpr void resize(size_type count)
 	{
 		if(count > size())
@@ -3168,6 +4206,21 @@ public:
 		}
 	}
 
+	/**
+	 * @brief
+	 * Resizes the container to contain count elements.
+	 * 
+	 * If the current size is greater than count, the container is reduced to its first count elements.
+	 * If the current size is less than count, additional copies of 'value' are appended.
+	 * 
+	 * @param count The new size of the container.
+	 * @param value The value to initialize the new elements with.
+	 * 
+	 * @note
+	 * T must meet the requirements of MoveInsertable and DefaultInsertable in order to use overload.
+	 * @note
+	 * If an exception is thrown, this function has no effect (strong exception guarantee). 
+	 */
 	constexpr void resize(size_type count, const T& value)
 	{
 		if(count > size())
@@ -3180,6 +4233,22 @@ public:
 		}
 	}
 
+	/**
+	 * @brief
+	 * Resizes the container to contain count elements.
+	 * 
+	 * If the current size is greater than count, the container is reduced to its last count elements.
+	 * If the current size is less than count, additional default-inserted elements are prepended.
+	 * 
+	 * @param count The new size of the container.
+	 * 
+	 * @note
+	 * T must meet the requirements of MoveInsertable and DefaultInsertable in order to use overload.
+	 * If an exception is thrown, this function has no effect (strong exception guarantee). 
+	 * @note
+	 * If T's move constructor is not noexcept and T is not CopyInsertable into *this, the throwing move constructor will be used.
+	 * If it throws, the guarantee is waived and the effects are unspecified.
+	 */
 	constexpr void resize_front(size_type count)
 	{
 		if(count > size())
@@ -3192,6 +4261,21 @@ public:
 		}
 	}
 
+	/**
+	 * @brief
+	 * Resizes the container to contain count elements.
+	 * 
+	 * If the current size is greater than count, the container is reduced to its last count elements.
+	 * If the current size is less than count, additional copies of 'value' are prepended.
+	 * 
+	 * @param count The new size of the container.
+	 * @param value The value to initialize the new elements with.
+	 * 
+	 * @note
+	 * T must meet the requirements of MoveInsertable and DefaultInsertable in order to use overload.
+	 * @note
+	 * If an exception is thrown, this function has no effect (strong exception guarantee). 
+	 */
 	constexpr void resize_front(size_type count, const T& value)
 	{
 		if(count > size())
@@ -3204,7 +4288,20 @@ public:
 		}
 	}
 
-
+	/**
+	 * @brief
+	 * Adds elements in the range [first, last) to the end of the container, as if by calling 'v.insert(v.end(), first, last)'.
+	 * 
+	 * @param first Iterator to the first element in the range of values to append.
+	 * @param last  The past-the-end iterator for the range of values to append.
+	 * 
+	 * @note
+	 * If an exception is thrown while copying elements in the range [first, last) to their destination location in the
+	 * container, there are no effects.
+	 * @note
+	 * If T's move constructor is not noexcept and T is not CopyInsertable into *this, the throwing move constructor will be used.
+	 * If it throws, the guarantee is waived and the effects are unspecified.
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -3216,8 +4313,8 @@ public:
 		> = false
 	>
 	constexpr void append(It first, It last) {
-		const std::size_t spare = this->capacity() - this->size();
-		std::size_t count_inserted = 0u;
+		const size_type spare = this->capacity() - this->size();
+		size_type count_inserted = 0u;
 		auto guard_ = detail::make_manual_scope_guard([this, spare, &count_inserted](){
 			this->pop_back_n(count_inserted);
 		});
@@ -3226,7 +4323,7 @@ public:
 			++count_inserted;
 		}
 		if(count_inserted < spare) {
-			assert(first == last);
+			TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 			guard_.active = false;
 			return;
 		}
@@ -3237,17 +4334,17 @@ public:
 		tmp.start_ = compute_offset(this->start_, this->size(), tmp.capacity());
 		for(;;) {
 			// Need to leave room for the stuff currently contained in '*this'.
-			std::size_t size_limit = tmp.capacity() - this->size();
+			size_type size_limit = tmp.capacity() - this->size();
 			while(first != last && tmp.size() < size_limit) {
 				tmp.emplace_back(*first++);
 			}
 			if(tmp.size() < size_limit) {
-				assert(first == last);
+				TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 				break;
 			}
 			else if (first == last)
 			{
-				assert(tmp.size() == size_limit);
+				TIM_CIRCULAR_BUFFER_ASSERT(tmp.size() == size_limit);
 				break;
 			}
 			tmp.reserve_back(grow_size(tmp.capacity()));
@@ -3262,6 +4359,20 @@ public:
 		this->commit(tmp);
 	}
 
+	/**
+	 * @brief
+	 * Adds elements in the range [first, last) to the end of the container, as if by calling 'insert(end(), first, last)'.
+	 * 
+	 * @param first Iterator to the first element in the range of values to append.
+	 * @param last  The past-the-end iterator for the range of values to append.
+	 * 
+	 * @note
+	 * If an exception is thrown while copying elements in the range [first, last) to their destination location in the
+	 * container, there are no effects.
+	 * @note
+	 * If T's move constructor is not noexcept and T is not CopyInsertable into *this, the throwing move constructor will be used.
+	 * If it throws, the guarantee is waived and the effects are unspecified.
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -3273,7 +4384,7 @@ public:
 		> = false
 	>
 	constexpr void append(It first, It last) {
-		std::size_t count = std::distance(first, last);
+		auto count = size_from_iterator_difference(std::distance(first, last));
 		if(this->capacity() - this->size() >= count) {
 			append_fast(first, last, count);
 			return;
@@ -3287,6 +4398,23 @@ public:
 		this->commit(tmp);
 	}
 
+	/**
+	 * @brief
+	 * Adds elements in the range [first, last) to the beginning of the container, as if by calling 'insert(begin(), first, last)'.
+	 * 
+	 * @param first Iterator to the first element in the range of values to prepend.
+	 * @param last  The past-the-end iterator for the range of values to prepend.
+	 * 
+	 * @note
+	 * If an exception is thrown while copying elements in the range [first, last) to their destination location in the
+	 * container, there are no effects.
+	 * @note
+	 * If T's move constructor is not noexcept and T is not CopyInsertable into *this, the throwing move constructor will be used.
+	 * If it throws, the guarantee is waived and the effects are unspecified.
+	 * @note
+	 * If the new size() is greater than capacity(), or if the new begin_index() is greater than its previous value, then all iterators
+	 * and references are invalidated.
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -3297,9 +4425,10 @@ public:
 			bool
 		> = false
 	>
-	constexpr void prepend(It first, It last) {
-		const std::size_t spare = this->capacity() - this->size();
-		std::size_t count_inserted = 0u;
+	constexpr void prepend(It first, It last)
+	{
+		const auto spare = this->capacity() - this->size();
+		size_type count_inserted = 0u;
 		auto guard_ = detail::make_manual_scope_guard([this, spare, &count_inserted](){
 			this->pop_front_n(count_inserted);
 		});
@@ -3308,7 +4437,7 @@ public:
 			++count_inserted;
 		}
 		if(count_inserted < spare) {
-			assert(first == last);
+			TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 			std::reverse(this->begin(), this->begin() + count_inserted);
 			guard_.active = false;
 			return;
@@ -3320,12 +4449,12 @@ public:
 		tmp.start_ = this->start_;
 		for(;;) {
 			// Need to leave room for the stuff currently contained in '*this'.
-			std::size_t size_limit = tmp.capacity() - this->size();
+			size_type size_limit = tmp.capacity() - this->size();
 			while(first != last && tmp.size() < size_limit) {
 				tmp.emplace_front(*first++);
 			}
 			if(tmp.size() < size_limit) {
-				assert(first == last);
+				TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 				break;
 			}
 			tmp.reserve_front(grow_size(this->capacity()));
@@ -3352,6 +4481,23 @@ public:
 		this->commit(tmp);
 	}
 
+	/**
+	 * @brief
+	 * Adds elements in the range [first, last) to the beginning of the container, as if by calling 'insert(begin(), first, last)'.
+	 * 
+	 * @param first Iterator to the first element in the range of values to prepend.
+	 * @param last  The past-the-end iterator for the range of values to prepend.
+	 * 
+	 * @note
+	 * If an exception is thrown while copying elements in the range [first, last) to their destination location in the
+	 * container, there are no effects.
+	 * @note
+	 * If T's move constructor is not noexcept and T is not CopyInsertable into *this, the throwing move constructor will be used.
+	 * If it throws, the guarantee is waived and the effects are unspecified.
+	 * @note
+	 * If the new size() is greater than capacity(), or if the new begin_index() is greater than its previous value, then all iterators
+	 * and references are invalidated.
+	 */
 	template <
 		class It,
 		std::enable_if_t<
@@ -3363,7 +4509,7 @@ public:
 		> = false
 	>
 	constexpr void prepend(It first, It last) {
-		std::size_t count = std::distance(first, last);
+		auto count = size_from_iterator_difference(std::distance(first, last));
 		if(this->capacity() - this->size() >= count) {
 			prepend_fast(first, last, count);
 			return;
@@ -3412,6 +4558,7 @@ public:
 	 * assignment operator.
 	 */
 	constexpr void shift_right(size_type count) {
+		assert(count <= capacity());
 		shift_left(capacity() - count);
 	}
 
@@ -3446,12 +4593,20 @@ public:
 	 * assignment operator.
 	 */
 	constexpr void shift_left(size_type count) {
+		assert(count <= capacity());
 		if(count == capacity() || count == 0u) {
 			return;
 		}
 		if(size() == capacity()) {
 			std::rotate(data_, data_ + count, data_ + capacity());
-			start_ = (begin() - count).get_index();
+			if(start_ >= count)
+			{
+				start_ -= count;
+			}
+			else
+			{
+				start_ = cap_ - (count - start_);
+			}
 			return;
 		}
 		size_type used = size();
@@ -3474,8 +4629,25 @@ public:
 	}
 
 
+	/**
+	 * @brief
+	 * Returns a `shape_type` describing the layout of the buffer.
+	 */
 	constexpr shape_type buffer_shape() const { return {capacity(), begin_index()}; }
 
+	/**
+	 * @brief
+	 * Exchanges the contents of the container with those of other.
+	 * 
+	 * Does not invoke any move, copy, or swap operations on individual elements.
+	 * All iterators and references remain valid. The past-the-end iterator is invalidated. 
+	 * 
+	 * @param other The container to exchange the contents with.
+	 * 
+	 * @note
+	 * If std::allocator_traits<allocator_type>::propagate_on_container_swap::value is true, then the allocators are exchanged using an unqualified call to non-member swap.
+	 * Otherwise, they are not swapped (and if get_allocator() != other.get_allocator(), the behavior is undefined). 
+	 */
 	constexpr void swap(CircularBuffer& other) noexcept(propagate_on_container_swap || is_always_equal)
 	{
 		using std::swap;
@@ -3489,15 +4661,38 @@ public:
 		}
 		else if constexpr(!is_always_equal)
 		{
-			assert(alloc() == other.alloc());
+			TIM_CIRCULAR_BUFFER_ASSERT(alloc() == other.alloc());
 		}
 	}
 
+	/**
+	 * @brief
+	 * Exchanges the contents of 'l' with those of 'r'.
+	 * 
+	 * Does not invoke any move, copy, or swap operations on individual elements.
+	 * All iterators and references remain valid. The past-the-end iterator is invalidated. 
+	 * 
+	 * @param l The first container whose contents will be exchanged.
+	 * @param r The second container whose contents will be exchanged.
+	 * 
+	 * @note
+	 * If std::allocator_traits<allocator_type>::propagate_on_container_swap::value is true, then the allocators are exchanged using an unqualified call to non-member swap.
+	 * Otherwise, they are not swapped (and if get_allocator() != other.get_allocator(), the behavior is undefined). 
+	 */
 	friend constexpr void swap(CircularBuffer& l, CircularBuffer& r) noexcept(propagate_on_container_swap || is_always_equal)
 	{
 		l.swap(r);
 	}
 
+	/**
+	 * @brief
+	 * Checks if the contents of lhs and rhs are equal, that is, they have the same number of elements and each element in lhs compares equal with the element in rhs at the same position.
+	 * 
+	 * @param l The first container whose contents will be compared.
+	 * @param r The second container whose contents will be compared.
+	 * 
+	 * @return true if the contents of the buffers are equal, false otherwise
+	 */
 	friend constexpr bool operator==(const CircularBuffer& l, const CircularBuffer& r) 
 	{
 		if (l.size() != r.size())
@@ -3507,12 +4702,12 @@ public:
 		auto l_ranges = l.get_ranges();
 		if (l_ranges.size() == 0)
 		{
-			assert(l.size() == 0);
-			assert(r.size() == 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(l.size() == 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(r.size() == 0);
 			return true;
 		}
 		auto r_ranges = r.get_ranges();
-		assert(r_ranges.size() != 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(r_ranges.size() != 0);
 
 		if (l_ranges[0].size() > r_ranges[0].size())
 		{
@@ -3543,6 +4738,15 @@ public:
 		}
 	}
 	
+	/**
+	 * @brief
+	 * Checks if the contents of lhs and rhs are not equal, that is, they have a different number of elements or if any element in lhs compares not equal with the element in rhs at the same position.
+	 * 
+	 * @param l The first container whose contents will be compared.
+	 * @param r The second container whose contents will be compared.
+	 * 
+	 * @return false if the contents of the buffers are equal, true otherwise
+	 */
 	friend constexpr bool operator!=(const CircularBuffer& l, const CircularBuffer& r) = default;
 
 private:
@@ -3668,7 +4872,7 @@ private:
 	constexpr iterator insert_reallocate(const_iterator pos, It first, It last, size_type count)
 	{
 		size_type new_cap = count + size();
-		assert(new_cap > capacity());
+		TIM_CIRCULAR_BUFFER_ASSERT(new_cap > capacity());
 		auto buf = make_temporary_buffer(new_cap);
 		for (const auto& r : as_moving_split_ranges(begin(), as_non_const_iterator(pos)))
 		{
@@ -3688,14 +4892,18 @@ private:
 
 	template <class It>
 	constexpr iterator insert_move_back_fast(const_iterator pos, It first, It last, size_type count) {
-		assert(count <= capacity() - size());
+		TIM_CIRCULAR_BUFFER_ASSERT(count <= capacity() - size());
+		if(count == 0u)
+		{
+			return as_non_const_iterator(pos);
+		}
 		size_type dest_index = pos - begin();
 		if(dest_index == size()) {
 			append_fast(first, last, count);
 			return as_non_const_iterator(pos);
 		}
 		size_type end_index = dest_index + count;
-		assert(end_index <= capacity());
+		TIM_CIRCULAR_BUFFER_ASSERT(end_index <= capacity());
 		if(end_index <= size()) {
 			// the inserted range won't overlap with the current logical end of the buffer
 			// 
@@ -3708,7 +4916,11 @@ private:
 			{
 				append_fast(r.begin(), r.end());
 			}
-			copy_ranges_backward(ranges_to_move.first(count - total_to_move).as_moving_ranges(), ranges_to_move.last(count - total_to_move));
+			copy_ranges_backward(ranges_to_move.first(total_to_move - count).as_moving_ranges(), ranges_to_move.last(total_to_move - count));
+			auto a = ranges_to_move;
+			auto b = total_to_move;
+			(void)a;
+			(void)b;
 		}
 		else {
 			// The inserted range will overlap with the current logical end of the buffer.
@@ -3736,11 +4948,11 @@ private:
 		{
 			for (auto& value : r)
 			{
-				assert(first != last);
+				TIM_CIRCULAR_BUFFER_ASSERT(first != last);
 				value = *first++;
 			}
 		}
-		assert(first == last);
+		TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 
 		return as_non_const_iterator(pos);
 	}
@@ -3759,7 +4971,11 @@ private:
 
 	template <class It>
 	constexpr iterator insert_move_front_fast(const_iterator pos, It first, It last, size_type count) {
-		assert(count <= capacity() - size());
+		TIM_CIRCULAR_BUFFER_ASSERT(count <= capacity() - size());
+		if(count == 0u)
+		{
+			return as_non_const_iterator(pos);
+		}
 		size_type dest_index = pos - begin();
 		if(dest_index == 0) {
 			prepend_fast(first, last, count);
@@ -3826,11 +5042,11 @@ private:
 		{
 			for (T& value : r)
 			{
-				assert(first != last);
+				TIM_CIRCULAR_BUFFER_ASSERT(first != last);
 				value = *first++;
 			}
 		}
-		assert(first == last);
+		TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 		return new_pos;
 	}
 
@@ -3839,7 +5055,7 @@ private:
 		{
 			auto guard = make_manual_prepend_guard_if_not_nothrow_move();
 			for(auto range: detail::reversed(get_ranges().first(count))) {
-				prepend_fast(range);
+				prepend_fast(try_make_move_iterator(range.begin()), try_make_move_iterator(range.end()));
 			}
 			if constexpr(std::is_nothrow_move_assignable_v<T>) {
 				guard.active = false;
@@ -3860,7 +5076,7 @@ private:
 		{
 			auto guard = make_manual_append_guard_if_not_nothrow_move();
 			for(auto range: get_ranges().last(count)) {
-				append_fast(range);
+				append_fast(try_make_move_iterator(range.begin()), try_make_move_iterator(range.end()));
 			}
 			if constexpr(std::is_nothrow_move_assignable_v<T>) {
 				guard.active = false;
@@ -3898,7 +5114,7 @@ private:
 			as_split_ranges(stop - (start - begin()), stop)
 		);
 		size_type back_count = count - (capacity() - initial_size);
-		assert(back_count == (initial_end - stop));
+		TIM_CIRCULAR_BUFFER_ASSERT(back_count == size_from_iterator_difference(initial_end - stop));
 		// Fill in the back.
 		try_move_ranges(
 			as_split_ranges(stop, initial_end),
@@ -3924,18 +5140,18 @@ private:
 
 	template <class Src, class Dest>
 	static constexpr void copy_ranges(Src src, Dest dest) {
-		assert(dest.total() == src.total());
+		TIM_CIRCULAR_BUFFER_ASSERT(dest.total() == src.total());
 		auto [outer, inner] = detail::copy_ranges(src.begin(), src.end(), dest.begin());
-		assert(outer == dest.end());
-		assert(!inner || inner == dest.end()[-1].end());
+		TIM_CIRCULAR_BUFFER_ASSERT(outer == dest.end());
+		TIM_CIRCULAR_BUFFER_ASSERT(!inner || inner == dest.end()[-1].end());
 	}
 
 	template <class Src, class Dest>
 	static constexpr void copy_ranges_backward(Src src, Dest dest) {
-		assert(dest.total() == src.total());
+		TIM_CIRCULAR_BUFFER_ASSERT(dest.total() == src.total());
 		auto [outer, inner] = detail::copy_ranges_backward(src.begin(), src.end(), dest.end());
-		assert(outer == dest.begin());
-		assert(!inner || *inner == dest.begin()->begin());
+		TIM_CIRCULAR_BUFFER_ASSERT(outer == dest.begin());
+		TIM_CIRCULAR_BUFFER_ASSERT(!inner || *inner == dest.begin()->begin());
 	}
 
 	// template <class Src, class Dest>
@@ -3961,58 +5177,60 @@ private:
 	// }
 
 	template <class Src, class Dest>
-	constexpr void try_move_ranges(Src src, Dest dest) {
-		copy_ranges(
-			detail::SimpleRange(
-				try_make_move_iterator(src.begin()),
-				try_make_move_iterator(src.end())
-			),
-			dest
-		);
+	static constexpr void try_move_ranges(Src src, Dest dest) {
+		if constexpr (std::is_nothrow_move_constructible_v<T> || !detail::is_copy_insertible_v<Allocator, T>)
+		{
+			copy_ranges(src.as_moving_ranges(), dest);
+		}
+		else
+		{
+			copy_ranges(src, dest);
+		}
 	}
 
 	template <class Src, class Dest>
-	constexpr void try_move_ranges_backward(Src src, Dest dest) {
-		copy_ranges_backward(
-			detail::SimpleRange(
-				try_make_move_iterator(src.begin()),
-				try_make_move_iterator(src.end())
-			),
-			dest
-		);
+	static constexpr void try_move_ranges_backward(Src src, Dest dest) {
+		if constexpr (std::is_nothrow_move_constructible_v<T> || !detail::is_copy_insertible_v<Allocator, T>)
+		{
+			copy_ranges_backward(src.as_moving_ranges(), dest);
+		}
+		else
+		{
+			copy_ranges_backward(src, dest);
+		}
 	}
 
 	template <class Src, class Dest>
 	constexpr void try_move_construct_ranges(Src src, Dest dest)
 	{
-		assert(dest.total() == src.total());
+		TIM_CIRCULAR_BUFFER_ASSERT(dest.total() == src.total());
 		if(dest.size() == 1) {
 			RangeGuard<T> guard_{std::addressof(alloc()), dest.begin()->begin(), dest.begin()->begin()};
 			for(auto range: src) {
 				auto stop = try_make_move_iterator(range.end());
 				for(auto pos = try_make_move_iterator(range.begin()); pos < stop; (void)++pos, ++guard_.stop) {
-					assert(guard_.stop < dest.begin()->end());
+					TIM_CIRCULAR_BUFFER_ASSERT(guard_.stop < dest.begin()->end());
 					construct(guard_.stop, *pos);
 				}
 			}
-			assert(guard_.stop == dest.begin()->end());
+			TIM_CIRCULAR_BUFFER_ASSERT(guard_.stop == dest.begin()->end());
 			guard_.alloc = nullptr;
 		} else {
 			RangeGuard<T> guard1_{std::addressof(alloc()), dest.begin()->begin(), dest.begin()->begin()};
-			assert(src.size() == 1u);
+			TIM_CIRCULAR_BUFFER_ASSERT(src.size() == 1u);
 			auto range = *src.begin();
 			auto pos = try_make_move_iterator(range.begin());
 			auto src_stop = try_make_move_iterator(range.end());
 			for(; guard1_.stop < dest.begin()->end(); (void)++pos, ++guard1_.stop) {
-				assert(pos < src_stop);
+				TIM_CIRCULAR_BUFFER_ASSERT(pos < src_stop);
 				construct(guard1_.stop, *pos);
 			}
 			RangeGuard<T> guard2_{std::addressof(alloc()), dest.begin()[1].begin(), dest.begin()[1].begin()};
 			for(; guard2_.stop < dest.begin()[1].end(); (void)++pos, ++guard2_.stop) {
-				assert(pos < src_stop);
+				TIM_CIRCULAR_BUFFER_ASSERT(pos < src_stop);
 				construct(guard2_.stop, *pos);
 			}
-			assert(pos == src_stop);
+			TIM_CIRCULAR_BUFFER_ASSERT(pos == src_stop);
 			guard2_.alloc = nullptr;
 			guard1_.alloc = nullptr;
 		}
@@ -4068,14 +5286,6 @@ private:
 		commit(tmp);
 	}
 
-	constexpr void reserve_front(size_type new_cap) {
-		reserve_slow(new_cap, start_ - (new_cap - capacity()));
-	}
-
-	constexpr void reserve_back(size_type new_cap) {
-		reserve_slow(new_cap, start_);
-	}
-
 
 	constexpr void reserve_fast(size_type count) {
 		data_ = allocate(count);
@@ -4083,34 +5293,32 @@ private:
 	}
 
 	template <class It>
-	constexpr It append_fast(It first, It last, size_type size_hint) {
+	constexpr void append_fast(It first, It last, size_type size_hint) {
 		for(auto range: get_spare_ranges()) {
 			for(auto& elem: range) {
 				if(size_hint == 0u) {
-					return first;
+					return;
 				}
 				--size_hint;
-				assert(first != last);
+				TIM_CIRCULAR_BUFFER_ASSERT(first != last);
 				construct(std::addressof(elem), *first++);
 				++size_;
 			}
 		}
-		return first;
 	}
 
 	template <class It>
-	constexpr It append_fast(It first, It last) {
+	constexpr void append_fast(It first, It last) {
 		for(auto range: get_spare_ranges()) {
 			for(auto& elem: range) {
 				if(first == last) {
-					return first;
+					return;
 				}
 				construct(std::addressof(elem), *first++);
 				++size_;
 			}
 		}
-		assert(first == last);
-		return first;
+		TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 	}
 	
 	template <class It>
@@ -4118,13 +5326,13 @@ private:
 #ifndef NDEBUG
 		if(storage_is_split())
 		{
-			assert(end().get_pointer() < begin().get_pointer());
-			assert(end().get_pointer() - begin().get_pointer() >= std::distance(first, last));
+			TIM_CIRCULAR_BUFFER_ASSERT(end().get_pointer() < begin().get_pointer());
+			TIM_CIRCULAR_BUFFER_ASSERT(end().get_pointer() - begin().get_pointer() >= std::distance(first, last));
 		}
 		else
 		{
-			assert(begin().get_pointer() <= end().get_pointer());
-			assert((data_ + cap_) - end().get_pointer() >= std::distance(first, last));
+			TIM_CIRCULAR_BUFFER_ASSERT(begin().get_pointer() <= end().get_pointer());
+			TIM_CIRCULAR_BUFFER_ASSERT((data_ + cap_) - end().get_pointer() >= std::distance(first, last));
 		}
 #endif /* NDEBUG */
 		auto dest = end().get_pointer();
@@ -4133,14 +5341,14 @@ private:
 			construct(dest++, *first++);
 			++size_;
 		}
-		assert(first == last);
+		TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 		return first;
 	}
 
 	template <class It>
 	constexpr void assign_empty(It first, It last, size_type size_hint)
 	{
-		assert(size_ == 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(size_ == 0);
 		if(cap_ < size_hint)
 		{
 			reallocate_empty(size_hint);
@@ -4149,16 +5357,16 @@ private:
 		auto stop = data_ + size_hint;
 		for(auto p = data_; p != stop; ++p)
 		{
-			assert(first != last);
+			TIM_CIRCULAR_BUFFER_ASSERT(first != last);
 			construct(p, *first++);
 			size_++;
 		}
-		assert(first == last);
+		TIM_CIRCULAR_BUFFER_ASSERT(first == last);
 	}
 	
 	constexpr void assign_empty(size_type count, const T& value)
 	{
-		assert(size_ == 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(size_ == 0);
 		if(cap_ < count)
 		{
 			reallocate_empty(count);
@@ -4174,17 +5382,17 @@ private:
 
 	constexpr void reallocate_empty(size_type count)
 	{
-		assert(size_ == 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(size_ == 0);
 		release_memory_empty();
 		initialize_allocation(count);
 	}
 
 	constexpr void release_memory_empty()
 	{
-		assert(size_ == 0);
-		if(cap_ != 0)
+		TIM_CIRCULAR_BUFFER_ASSERT(size_ == 0);
+		if(data_)
 		{
-			assert(data_);
+			TIM_CIRCULAR_BUFFER_ASSERT(data_);
 			deallocate(data_, cap_);
 			data_ = nullptr;
 			cap_ = 0;
@@ -4212,66 +5420,52 @@ private:
 				++dest_first;
 			}
 		}
-		assert(dest_first == dest_last);
+		TIM_CIRCULAR_BUFFER_ASSERT(dest_first == dest_last);
 		return src_first;
 	}
 
 	template <class It>
-	constexpr It prepend_fast(It first, It last) {
+	constexpr void prepend_fast(It first, It last) {
 		using iter_cat_type = typename std::iterator_traits<It>::iterator_category;
 		static_assert(!std::is_same_v<iter_cat_type, std::input_iterator_tag>, "");
-		return prepend_fast(first, last, std::distance(first, last));
+		prepend_fast(first, last, size_from_iterator_difference(std::distance(first, last)));
 	}
 
 	template <class It>
-	constexpr It prepend_fast(It first, It last, size_type size_hint) {
-		auto ranges = get_spare_ranges();
-		assert(size_hint <= ranges.total());
-		if(ranges.size() == 1 || (ranges.begin()[1].size() >= size_hint)) {
-			auto range = ranges.size() == 1 ? ranges.front() : ranges.back();
-			assert(range.size() >= size_hint);
-			auto p = range.end() - size_hint;
-			RangeGuard<T> guard_{std::addressof(alloc()), p, p};
-			for(std::size_t i = 0u; i < size_hint; (void)++i, ++guard_.stop) {
-				assert(first != last);
-				construct(guard_.stop, *first++);
-			}
-			guard_.alloc = nullptr;
-		} else {
-			auto back_range = *ranges.begin();
-			const size_type back_range_count = (size_hint - ranges.begin()[1].size());
-			pointer p = back_range.end() - back_range_count;
-			RangeGuard<T> back_guard_{std::addressof(alloc()), p, p};
-			for(std::size_t i = 0u; i < back_range_count; (void)++i, ++back_guard_.stop) {
-				assert(first != last);
-				construct(back_guard_.stop, *first++);
-			}
-
-			auto front_range = ranges.begin()[1];
-			const size_type front_range_count = front_range.size();
-			p = front_range.begin(); 
-			RangeGuard<T> front_guard_{std::addressof(alloc()), p, p};
-			assert(front_range_count == (size_hint - back_range_count));
-			for(std::size_t i = 0u; i < back_range_count; (void)++i, ++back_guard_.stop) {
-				assert(first != last);
-				construct(back_guard_.stop, *first++);
-			}
-
-			front_guard_.alloc = nullptr;
-			back_guard_.alloc = nullptr;
-		}
-		assert(first == last);
-		if (start_ >= size_hint)
+	constexpr void prepend_fast(It first, It last, size_type size_hint) {
+		if(size_hint == 0)
 		{
-			start_ -= size_hint;
+			assert(first == last);
+			return;
+		}
+		auto ranges = get_spare_ranges().last(size_hint);
+		TIM_CIRCULAR_BUFFER_ASSERT(ranges.size() >= 1u);
+		TIM_CIRCULAR_BUFFER_ASSERT(size_hint <= ranges.total());
+		auto front_range = *ranges.begin();
+		RangeGuard<T> g1{std::addressof(alloc()), front_range.begin(), front_range.begin()};
+		while(g1.stop != front_range.end())
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT(first != last);
+			construct(g1.stop++, *first++);
+		}
+		if(ranges.size() == 2)
+		{
+			auto back_range = ranges.begin()[1];
+			RangeGuard<T> g2{std::addressof(alloc()), back_range.begin(), back_range.begin()};
+			while(g2.stop != back_range.end())
+			{
+				TIM_CIRCULAR_BUFFER_ASSERT(first != last);
+				construct(g2.stop++, *first++);
+			}
+			g2.alloc = nullptr;
 		}
 		else
 		{
-			start_ = cap_ - (size_hint - start_);
+			TIM_CIRCULAR_BUFFER_ASSERT(front_range.size() == size_hint);
 		}
-		
+		start_ = size_from_iterator_difference(g1.start - data_);
 		size_ += size_hint;
-		return first;
+		g1.alloc = nullptr;
 	}
 	
 	constexpr void commit(temporary_buffer_type& other) noexcept {
@@ -4286,10 +5480,10 @@ private:
 	}
 
 	constexpr void commit_empty(temporary_buffer_type& other) noexcept {
-		assert(!data_);
-		assert(size_ == 0);
-		assert(cap_ == 0);
-		assert(start_ == 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(!data_);
+		TIM_CIRCULAR_BUFFER_ASSERT(size_ == 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(cap_ == 0);
+		TIM_CIRCULAR_BUFFER_ASSERT(start_ == 0);
 		data_  = std::exchange(other.data_, nullptr);
 		cap_   = std::exchange(other.cap_, 0u);
 		size_  = std::exchange(other.size_, 0u);
@@ -4329,7 +5523,7 @@ private:
 		} else {
 			auto old_n = n;
 			n /= 5;
-			assert(n > 0u);
+			TIM_CIRCULAR_BUFFER_ASSERT(n > 0u);
 			n *= 8;
 			if(n > old_n)
 			{
@@ -4358,7 +5552,7 @@ private:
 	}
 
 	static constexpr SplitRanges<const_pointer> as_split_ranges(const_iterator first, const_iterator last) {
-		assert(first <= last);
+		TIM_CIRCULAR_BUFFER_ASSERT(first <= last);
 		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
 			return SplitRanges<const_pointer>(
 				SplitRange<const_pointer>(first.get_pointer(), last.tagged_index_ - first.tagged_index_)
@@ -4371,7 +5565,7 @@ private:
 	}
 
 	static constexpr SplitRanges<pointer> as_split_ranges(iterator first, iterator last) {
-		assert(first <= last);
+		TIM_CIRCULAR_BUFFER_ASSERT(first <= last);
 		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
 			return SplitRanges<pointer>(
 				SplitRange<pointer>(first.get_pointer(), last.tagged_index_ - first.tagged_index_)
@@ -4385,7 +5579,7 @@ private:
 
 
 	static constexpr SplitRanges<std::move_iterator<pointer>> as_moving_split_ranges(iterator first, iterator last) {
-		assert(first <= last);
+		TIM_CIRCULAR_BUFFER_ASSERT(first <= last);
 		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
 			return SplitRanges<std::move_iterator<pointer>>(
 				SplitRange<std::move_iterator<pointer>>(std::make_move_iterator(first.get_pointer()), last.tagged_index_ - first.tagged_index_)
@@ -4496,15 +5690,15 @@ private:
 	}
 
 	static constexpr size_type compute_offset(size_type start, size_type count, size_type cap) {
-		assert(cap > start);
-		assert(cap >= count);
+		TIM_CIRCULAR_BUFFER_ASSERT(cap > start);
+		TIM_CIRCULAR_BUFFER_ASSERT(cap >= count);
 		if(cap - start > count) {
 			return start + count;
 		}
 		return count - (cap - start);
 	}
 
-	constexpr bool storage_is_split() {
+	constexpr bool storage_is_split() const {
 		return (capacity() - begin_index()) < size();
 	}
 
@@ -4529,12 +5723,35 @@ private:
 template <class InputIt, class Alloc = std::allocator<typename std::iterator_traits<InputIt>::value_type>>
 CircularBuffer(InputIt, InputIt, Alloc = Alloc()) -> CircularBuffer<typename std::iterator_traits<InputIt>::value_type, Alloc>;
 
+/**
+ * @brief
+ * Erases all elements in 'b' for which 'pred' returns true, as if by calling 'b.erase_if(pred)'.
+ * 
+ * @param b    The container whose contents are to be erased.
+ * @param pred Predicate function object which returns 'true' for elements that should be erased.
+ * 
+ * @note
+ * After calling this function, the values of b.begin_index() and b.end_index() are unspecified.
+ * @note
+ * The expression pred(v) must be convertible to bool for every argument v of type (possibly const) T,
+ * regardless of value category, and must not modify v.
+ * Thus, a parameter type of T& is not allowed, nor is T unless for T a move is equivalent to a copy.
+ */
 template <class T, class A, class Pred>
 constexpr auto erase_if(CircularBuffer<T, A>& b, Pred pred) -> typename CircularBuffer<T, A>::size_type
 {
 	return b.erase_if(pred);
 }
-
+/**
+ * @brief
+ * Erases all elements in 'b' which compare equal to 'value'.
+ * 
+ * @param b     The container whose contents are to be erased.
+ * @param value The value to compare elements of 'b' to.
+ * 
+ * @note
+ * After calling this function, the values of b.begin_index() and b.end_index() are unspecified.
+ */
 template <class T, class A, class U>
 constexpr auto erase(CircularBuffer<T, A>& b, const U& value) -> typename CircularBuffer<T, A>::size_type
 {

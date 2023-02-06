@@ -17,47 +17,57 @@
 
 #include "test_macros.h"
 #include "min_allocator.h"
+#include "test_buffers.h"
 
 int main(int, char**)
 {
-    {
-    typedef tim::CircularBuffer<int> C;
-    C c;
-    ASSERT_NOEXCEPT(c.size());
-    assert(c.size() == 0);
-    c.push_back(C::value_type(2));
-    assert(c.size() == 1);
-    c.push_back(C::value_type(1));
-    assert(c.size() == 2);
-    c.push_back(C::value_type(3));
-    assert(c.size() == 3);
-    c.erase(c.begin());
-    assert(c.size() == 2);
-    c.erase(c.begin());
-    assert(c.size() == 1);
-    c.erase(c.begin());
-    assert(c.size() == 0);
-    }
-#if TEST_STD_VER >= 11
-    {
-    typedef tim::CircularBuffer<int, min_allocator<int>> C;
-    C c;
-    ASSERT_NOEXCEPT(c.size());
-    assert(c.size() == 0);
-    c.push_back(C::value_type(2));
-    assert(c.size() == 1);
-    c.push_back(C::value_type(1));
-    assert(c.size() == 2);
-    c.push_back(C::value_type(3));
-    assert(c.size() == 3);
-    c.erase(c.begin());
-    assert(c.size() == 2);
-    c.erase(c.begin());
-    assert(c.size() == 1);
-    c.erase(c.begin());
-    assert(c.size() == 0);
-    }
-#endif
+	{
+	typedef tim::CircularBuffer<int> C;
+	C c;
+	ASSERT_NOEXCEPT(c.size());
+	assert(c.size() == 0);
+	c.push_back(C::value_type(2));
+	assert(c.size() == 1);
+	c.push_back(C::value_type(1));
+	assert(c.size() == 2);
+	c.push_back(C::value_type(3));
+	assert(c.size() == 3);
+	c.erase(c.begin());
+	assert(c.size() == 2);
+	c.erase(c.begin());
+	assert(c.size() == 1);
+	c.erase(c.begin());
+	assert(c.size() == 0);
+	}
+	{
+	typedef tim::CircularBuffer<int, min_allocator<int>> C;
+	C c;
+	ASSERT_NOEXCEPT(c.size());
+	assert(c.size() == 0);
+	c.push_back(C::value_type(2));
+	assert(c.size() == 1);
+	c.push_back(C::value_type(1));
+	assert(c.size() == 2);
+	c.push_back(C::value_type(3));
+	assert(c.size() == 3);
+	c.erase(c.begin());
+	assert(c.size() == 2);
+	c.erase(c.begin());
+	assert(c.size() == 1);
+	c.erase(c.begin());
+	assert(c.size() == 0);
+	}
+	{ auto buf = get_empty_buffer(); assert(buf.size() == 0u); }
+	{ auto buf = get_empty_buffer_with_capacity(); assert(buf.size() == 0u); }
+	{ auto buf = get_unary_buffer(); assert(buf.size() == 1); }
+	{ auto buf = get_unary_buffer_with_back_slack(); assert(buf.size() == 1); }
+	{ auto buf = get_unary_buffer_with_front_slack(); assert(buf.size() == 1); }
+	{ auto buf = get_simple_wrapped_buffer(); assert(buf.size() != 0u); }
+	{ auto buf = get_simple_buffer_with_front_and_back_slack(); assert(buf.size() != 0u); }
+	{ auto buf = get_large_wrapped_buffer(); assert(buf.size() != 0u); }
+	{ auto buf = get_large_full_buffer(); assert(buf.size() != 0u); }
+	{ auto buf = get_large_full_wrapped_buffer(); assert(buf.size() != 0u); }
+
 
   return 0;
 }

@@ -16,52 +16,87 @@
 #include "test_macros.h"
 #include "test_allocator.h"
 #include "min_allocator.h"
-#include "asan_testing.h"
+#include "test_buffers.h"
 
 template <class C>
 void
 test(const C& x, const typename C::allocator_type& a)
 {
-    typename C::size_type s = x.size();
-    C c(x, a);
-    LIBCPP_ASSERT(c.__invariants());
-    assert(c.size() == s);
-    assert(c == x);
-    LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
+	{
+		typename C::size_type s = x.size();
+		C c(x, a);
+		c._assert_invariants();
+		assert(c.size() == s);
+		assert(c == x);
+	}
+	{
+		typename C::size_type s = x.size();
+		C c(tim::tags::optimized, x, a);
+		c._assert_invariants();
+		assert(c.size() == s);
+		assert(c == x);
+		assert(c.capacity() == c.size());
+	}
+	{
+		typename C::size_type s = x.size();
+		C c(tim::tags::preserve_capacity, x, a);
+		c._assert_invariants();
+		assert(c.size() == s);
+		assert(c == x);
+		assert(c.capacity() == x.capacity());
+		assert(c.begin_index() == 0);
+	}
+	{
+		typename C::size_type s = x.size();
+		C c(tim::tags::preserve_layout, x, a);
+		c._assert_invariants();
+		assert(c.size() == s);
+		assert(c == x);
+		assert(c.capacity() == x.capacity());
+		assert(c.begin_index() == x.begin_index());
+	}
 }
 
 int main(int, char**)
 {
-    {
-        int a[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3, 1, 0};
-        int* an = a + sizeof(a)/sizeof(a[0]);
-        test(tim::CircularBuffer<int>(a, an), std::allocator<int>());
-    }
-    {
-        tim::CircularBuffer<int, test_allocator<int> > l(3, 2, test_allocator<int>(5));
-        tim::CircularBuffer<int, test_allocator<int> > l2(l, test_allocator<int>(3));
-        assert(l2 == l);
-        assert(l2.get_allocator() == test_allocator<int>(3));
-    }
-    {
-        tim::CircularBuffer<int, other_allocator<int> > l(3, 2, other_allocator<int>(5));
-        tim::CircularBuffer<int, other_allocator<int> > l2(l, other_allocator<int>(3));
-        assert(l2 == l);
-        assert(l2.get_allocator() == other_allocator<int>(3));
-    }
-#if TEST_STD_VER >= 11
-    {
-        int a[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3, 1, 0};
-        int* an = a + sizeof(a)/sizeof(a[0]);
-        test(tim::CircularBuffer<int, min_allocator<int>>(a, an), min_allocator<int>());
-    }
-    {
-        tim::CircularBuffer<int, min_allocator<int> > l(3, 2, min_allocator<int>());
-        tim::CircularBuffer<int, min_allocator<int> > l2(l, min_allocator<int>());
-        assert(l2 == l);
-        assert(l2.get_allocator() == min_allocator<int>());
-    }
-#endif
+	{
+		int a[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3, 1, 0};
+		int* an = a + sizeof(a)/sizeof(a[0]);
+		test(tim::CircularBuffer<int>(a, an), std::allocator<int>());
+	}
+	{
+		tim::CircularBuffer<int, test_allocator<int> > l(3, 2, test_allocator<int>(5));
+		tim::CircularBuffer<int, test_allocator<int> > l2(l, test_allocator<int>(3));
+		assert(l2 == l);
+		assert(l2.get_allocator() == test_allocator<int>(3));
+	}
+	{
+		tim::CircularBuffer<int, other_allocator<int> > l(3, 2, other_allocator<int>(5));
+		tim::CircularBuffer<int, other_allocator<int> > l2(l, other_allocator<int>(3));
+		assert(l2 == l);
+		assert(l2.get_allocator() == other_allocator<int>(3));
+	}
+	{
+		int a[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 8, 7, 6, 5, 4, 3, 1, 0};
+		int* an = a + sizeof(a)/sizeof(a[0]);
+		test(tim::CircularBuffer<int, min_allocator<int>>(a, an), min_allocator<int>());
+	}
+	{
+		tim::CircularBuffer<int, min_allocator<int> > l(3, 2, min_allocator<int>());
+		tim::CircularBuffer<int, min_allocator<int> > l2(l, min_allocator<int>());
+		assert(l2 == l);
+		assert(l2.get_allocator() == min_allocator<int>());
+	}
+	for (const auto& buf : get_test_buffers())
+	{
+		test(buf, std::allocator<int>());
+	}
+	for (const auto& buf : get_test_buffers(min_allocator<int>()))
+	{
+		test(buf, min_allocator<int>());
+	}
+
+
 
   return 0;
 }

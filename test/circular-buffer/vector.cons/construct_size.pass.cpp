@@ -23,18 +23,13 @@ template <class C>
 void
 test2(typename C::size_type n, typename C::allocator_type const& a = typename C::allocator_type ())
 {
-#if TEST_STD_VER >= 14
     C c(n, a);
-    LIBCPP_ASSERT(c.__invariants());
+    c._assert_invariants();
     assert(c.size() == n);
     assert(c.get_allocator() == a);
     LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
     for (typename C::const_iterator i = c.cbegin(), e = c.cend(); i != e; ++i)
         assert(*i == typename C::value_type());
-#else
-    ((void)n);
-    ((void)a);
-#endif
 }
 
 template <class C>
@@ -42,14 +37,12 @@ void
 test1(typename C::size_type n)
 {
     C c(n);
-    LIBCPP_ASSERT(c.__invariants());
+    c._assert_invariants();
     assert(c.size() == n);
     assert(c.get_allocator() == typename C::allocator_type());
     LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
-#if TEST_STD_VER >= 11
     for (typename C::const_iterator i = c.cbegin(), e = c.cend(); i != e; ++i)
         assert(*i == typename C::value_type());
-#endif
 }
 
 template <class C>
@@ -65,12 +58,10 @@ int main(int, char**)
     test<tim::CircularBuffer<int> >(50);
     test<tim::CircularBuffer<DefaultOnly> >(500);
     assert(DefaultOnly::count == 0);
-#if TEST_STD_VER >= 11
     test<tim::CircularBuffer<int, min_allocator<int>> >(50);
     test<tim::CircularBuffer<DefaultOnly, min_allocator<DefaultOnly>> >(500);
     test2<tim::CircularBuffer<DefaultOnly, test_allocator<DefaultOnly>> >( 100, test_allocator<DefaultOnly>(23));
     assert(DefaultOnly::count == 0);
-#endif
 
   return 0;
 }

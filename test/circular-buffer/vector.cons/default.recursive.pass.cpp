@@ -16,11 +16,10 @@
 
 struct X
 {
-    tim::CircularBuffer<X> q;
+	tim::CircularBuffer<X> q;
 };
 
 int main(int, char**)
 {
-
-  return 0;
+	return 0;
 }

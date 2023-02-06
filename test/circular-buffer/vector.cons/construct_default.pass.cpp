@@ -25,79 +25,69 @@ template <class C>
 void
 test0()
 {
-#if TEST_STD_VER > 14
-    static_assert((noexcept(C{})), "" );
-#elif TEST_STD_VER >= 11
-    static_assert((noexcept(C()) == noexcept(typename C::allocator_type())), "" );
-#endif
-    C c;
-    LIBCPP_ASSERT(c.__invariants());
-    assert(c.empty());
-    assert(c.get_allocator() == typename C::allocator_type());
-    LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
-#if TEST_STD_VER >= 11
-    C c1 = {};
-    LIBCPP_ASSERT(c1.__invariants());
-    assert(c1.empty());
-    assert(c1.get_allocator() == typename C::allocator_type());
-    LIBCPP_ASSERT(is_contiguous_container_asan_correct(c1));
-#endif
+	static_assert((noexcept(C{})), "" );
+	static_assert((noexcept(C()) == noexcept(typename C::allocator_type())), "" );
+	C c;
+	c._assert_invariants();
+	assert(c.empty());
+	assert(c.get_allocator() == typename C::allocator_type());
+	LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
+	C c1 = {};
+	c._assert_invariants();
+	assert(c1.empty());
+	assert(c1.get_allocator() == typename C::allocator_type());
+	LIBCPP_ASSERT(is_contiguous_container_asan_correct(c1));
 }
 
 template <class C>
 void
 test1(const typename C::allocator_type& a)
 {
-#if TEST_STD_VER > 14
-    static_assert((noexcept(C{typename C::allocator_type{}})), "" );
-#elif TEST_STD_VER >= 11
-    static_assert((noexcept(C(typename C::allocator_type())) == std::is_nothrow_copy_constructible<typename C::allocator_type>::value), "" );
-#endif
-    C c(a);
-    LIBCPP_ASSERT(c.__invariants());
-    assert(c.empty());
-    assert(c.get_allocator() == a);
-    LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
+	static_assert((noexcept(C{typename C::allocator_type{}})), "" );
+	static_assert((noexcept(C(typename C::allocator_type())) == std::is_nothrow_copy_constructible<typename C::allocator_type>::value), "" );
+	C c(a);
+	c._assert_invariants();
+	assert(c.empty());
+	assert(c.get_allocator() == a);
+	LIBCPP_ASSERT(is_contiguous_container_asan_correct(c));
 }
 
 int main(int, char**)
 {
-    {
-    test0<tim::CircularBuffer<int> >();
-    test0<tim::CircularBuffer<NotConstructible> >();
-    test1<tim::CircularBuffer<int, test_allocator<int> > >(test_allocator<int>(3));
-    test1<tim::CircularBuffer<NotConstructible, test_allocator<NotConstructible> > >
-        (test_allocator<NotConstructible>(5));
-    }
-    {
-        tim::CircularBuffer<int, limited_allocator<int, 10> > v;
-        assert(v.empty());
-    }
-#if TEST_STD_VER >= 11
-    {
-    test0<tim::CircularBuffer<int, min_allocator<int>> >();
-    test0<tim::CircularBuffer<NotConstructible, min_allocator<NotConstructible>> >();
-    test1<tim::CircularBuffer<int, min_allocator<int> > >(min_allocator<int>{});
-    test1<tim::CircularBuffer<NotConstructible, min_allocator<NotConstructible> > >
-        (min_allocator<NotConstructible>{});
-    }
-    {
-        tim::CircularBuffer<int, min_allocator<int> > v;
-        assert(v.empty());
-    }
+	{
+	test0<tim::CircularBuffer<int> >();
+	test0<tim::CircularBuffer<NotConstructible> >();
+	test1<tim::CircularBuffer<int, test_allocator<int> > >(test_allocator<int>(3));
+	test1<tim::CircularBuffer<NotConstructible, test_allocator<NotConstructible> > >
+		(test_allocator<NotConstructible>(5));
+	}
+	{
+		tim::CircularBuffer<int, limited_allocator<int, 10> > v;
+		assert(v.empty());
+	}
+	{
+	test0<tim::CircularBuffer<int, min_allocator<int>> >();
+	test0<tim::CircularBuffer<NotConstructible, min_allocator<NotConstructible>> >();
+	test1<tim::CircularBuffer<int, min_allocator<int> > >(min_allocator<int>{});
+	test1<tim::CircularBuffer<NotConstructible, min_allocator<NotConstructible> > >
+		(min_allocator<NotConstructible>{});
+	}
+	{
+		tim::CircularBuffer<int, min_allocator<int> > v;
+		assert(v.empty());
+	}
 
-    {
-    test0<tim::CircularBuffer<int, explicit_allocator<int>> >();
-    test0<tim::CircularBuffer<NotConstructible, explicit_allocator<NotConstructible>> >();
-    test1<tim::CircularBuffer<int, explicit_allocator<int> > >(explicit_allocator<int>{});
-    test1<tim::CircularBuffer<NotConstructible, explicit_allocator<NotConstructible> > >
-        (explicit_allocator<NotConstructible>{});
-    }
-    {
-        tim::CircularBuffer<int, explicit_allocator<int> > v;
-        assert(v.empty());
-    }
-#endif
+	{
+	test0<tim::CircularBuffer<int, explicit_allocator<int>> >();
+	test0<tim::CircularBuffer<NotConstructible, explicit_allocator<NotConstructible>> >();
+	test1<tim::CircularBuffer<int, explicit_allocator<int> > >(explicit_allocator<int>{});
+	test1<tim::CircularBuffer<NotConstructible, explicit_allocator<NotConstructible> > >
+		(explicit_allocator<NotConstructible>{});
+	}
+	{
+		tim::CircularBuffer<int, explicit_allocator<int> > v;
+		assert(v.empty());
+	}
 
-  return 0;
+	return 0;
 }

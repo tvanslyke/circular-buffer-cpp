@@ -1,0 +1,22 @@
+tim::CircularBuffer<int> get_empty_buffer()
+
+tim::CircularBuffer<int> get_empty_buffer_with_capacity()
+
+tim::CircularBuffer<int> get_unary_buffer()
+
+tim::CircularBuffer<int> get_unary_buffer_with_back_slack()
+
+tim::CircularBuffer<int> get_unary_buffer_with_front_slack()
+
+tim::CircularBuffer<int> get_simple_wrapped_buffer()
+
+tim::CircularBuffer<int> get_simple_buffer_with_front_and_back_slack()
+
+tim::CircularBuffer<int> get_large_wrapped_buffer()
+
+tim::CircularBuffer<int> get_large_full_buffer()
+
+tim::CircularBuffer<int> get_large_full_wrapped_buffer()
+
+std::vector<CircularBuffer<int>> get_test_buffers()
+

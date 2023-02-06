@@ -22,31 +22,29 @@
 template <class T>
 struct some_alloc
 {
-    typedef T value_type;
-    some_alloc(const some_alloc&);
-    ~some_alloc() noexcept(false);
+	typedef T value_type;
+	some_alloc(const some_alloc&);
+	~some_alloc() noexcept(false);
 };
 
 int main(int, char**)
 {
-    {
-        typedef tim::CircularBuffer<MoveOnly> C;
-        static_assert(std::is_nothrow_destructible<C>::value, "");
-    }
-    {
-        typedef tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly>> C;
-        static_assert(std::is_nothrow_destructible<C>::value, "");
-    }
-    {
-        typedef tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly>> C;
-        static_assert(std::is_nothrow_destructible<C>::value, "");
-    }
-#if defined(_LIBCPP_VERSION)
-    {
-        typedef tim::CircularBuffer<MoveOnly, some_alloc<MoveOnly>> C;
-        static_assert(!std::is_nothrow_destructible<C>::value, "");
-    }
-#endif // _LIBCPP_VERSION
+	{
+		typedef tim::CircularBuffer<MoveOnly> C;
+		static_assert(std::is_nothrow_destructible<C>::value, "");
+	}
+	{
+		typedef tim::CircularBuffer<MoveOnly, test_allocator<MoveOnly>> C;
+		static_assert(std::is_nothrow_destructible<C>::value, "");
+	}
+	{
+		typedef tim::CircularBuffer<MoveOnly, other_allocator<MoveOnly>> C;
+		static_assert(std::is_nothrow_destructible<C>::value, "");
+	}
+	{
+		typedef tim::CircularBuffer<MoveOnly, some_alloc<MoveOnly>> C;
+		static_assert(!std::is_nothrow_destructible<C>::value, "");
+	}
 
   return 0;
 }

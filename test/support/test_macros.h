@@ -19,9 +19,6 @@
 #   define TEST_IMP_INCLUDED_HEADER
 # endif
 #endif
-#ifndef TEST_IMP_INCLUDED_HEADER
-#include <ciso646>
-#endif
 
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
@@ -240,19 +237,11 @@
 #endif
 
 /* Macros for testing libc++ specific behavior and extensions */
-#if defined(_LIBCPP_VERSION)
 #define LIBCPP_ASSERT(...) assert(__VA_ARGS__)
 #define LIBCPP_STATIC_ASSERT(...) static_assert(__VA_ARGS__)
 #define LIBCPP_ASSERT_NOEXCEPT(...) ASSERT_NOEXCEPT(__VA_ARGS__)
 #define LIBCPP_ASSERT_NOT_NOEXCEPT(...) ASSERT_NOT_NOEXCEPT(__VA_ARGS__)
 #define LIBCPP_ONLY(...) __VA_ARGS__
-#else
-#define LIBCPP_ASSERT(...) ((void)0)
-#define LIBCPP_STATIC_ASSERT(...) ((void)0)
-#define LIBCPP_ASSERT_NOEXCEPT(...) ((void)0)
-#define LIBCPP_ASSERT_NOT_NOEXCEPT(...) ((void)0)
-#define LIBCPP_ONLY(...) ((void)0)
-#endif
 
 #define TEST_IGNORE_NODISCARD (void)
 

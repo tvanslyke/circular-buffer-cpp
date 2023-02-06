@@ -22,8 +22,8 @@
 
 int main(int, char**)
 {
-    tim::CircularBuffer<int> c;
-    c.empty();  // expected-error {{ignoring return value of function declared with 'nodiscard' attribute}}
+	tim::CircularBuffer<int> c;
+	c.empty();  // expected-error {{ignoring return value of function declared with 'nodiscard' attribute}}
 
-  return 0;
+	return 0;
 }
