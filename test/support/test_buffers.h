@@ -120,6 +120,38 @@ auto get_large_full_wrapped_buffer(const A& a = A()) -> tim::CircularBuffer<T, A
 	return buf;
 }
 
+template <class A=std::allocator<int>, class T = typename std::allocator_traits<A>::value_type>
+auto get_large_buffer_with_front_slack(const A& a = A()) -> tim::CircularBuffer<T, A>
+{
+	tim::CircularBuffer<T, A> buf(a);
+	buf.reserve(25);
+	for(std::size_t i = 0; i < 10u; ++i)
+	{
+		buf.emplace_front();
+	}
+	assert(buf.begin_index() == 15);
+	assert(buf.end_index() == 0u);
+	assert(buf.get_allocator() == a);
+	assert(buf.capacity() == 25);
+	return buf;
+}
+
+template <class A=std::allocator<int>, class T = typename std::allocator_traits<A>::value_type>
+auto get_large_buffer_with_back_slack(const A& a = A()) -> tim::CircularBuffer<T, A>
+{
+	tim::CircularBuffer<T, A> buf(a);
+	buf.reserve(25);
+	for(std::size_t i = 0; i < 10u; ++i)
+	{
+		buf.emplace_back();
+	}
+	assert(buf.begin_index() == 0);
+	assert(buf.end_index() == 10);
+	assert(buf.get_allocator() == a);
+	assert(buf.capacity() == 25);
+	return buf;
+}
+
 
 template <class A=std::allocator<int>, class T = typename std::allocator_traits<A>::value_type>
 std::vector<std::function<tim::CircularBuffer<T, A>()>> get_test_buffer_makers(const A& a = A())
@@ -134,7 +166,9 @@ std::vector<std::function<tim::CircularBuffer<T, A>()>> get_test_buffer_makers(c
 		std::bind(get_simple_buffer_with_front_and_back_slack<A, T>, a),
 		std::bind(get_large_wrapped_buffer<A, T>, a),
 		std::bind(get_large_full_buffer<A, T>, a),
-		std::bind(get_large_full_wrapped_buffer<A, T>, a)
+		std::bind(get_large_full_wrapped_buffer<A, T>, a),
+		std::bind(get_large_buffer_with_front_slack<A, T>, a),
+		std::bind(get_large_buffer_with_back_slack<A, T>, a)
 	};
 }
 
@@ -142,7 +176,7 @@ template <class A=std::allocator<int>, class T = typename std::allocator_traits<
 std::vector<tim::CircularBuffer<T, A>> get_test_buffers(const A& a = A())
 {
 	std::vector<tim::CircularBuffer<T, A>> v;
-	v.reserve(10);
+	v.reserve(12);
 	v.emplace_back(get_empty_buffer(a));
 	v.emplace_back(get_empty_buffer_with_capacity(a));
 	v.emplace_back(get_unary_buffer(a));
@@ -153,6 +187,8 @@ std::vector<tim::CircularBuffer<T, A>> get_test_buffers(const A& a = A())
 	v.emplace_back(get_large_wrapped_buffer(a));
 	v.emplace_back(get_large_full_buffer(a));
 	v.emplace_back(get_large_full_wrapped_buffer(a));
+	v.emplace_back(get_large_buffer_with_front_slack(a));
+	v.emplace_back(get_large_buffer_with_back_slack(a));
 	return v;
 }
 

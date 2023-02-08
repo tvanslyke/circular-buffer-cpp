@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+    <Type Name="tim::circular_buffer::CircularBuffer&lt;*&gt;">
+        <DisplayString>{{ size={size_} }</DisplayString>
+        <Expand>
+            <Item Name="[size]" ExcludeView="simple">size_</Item>
+            <Item Name="[capacity]" ExcludeView="simple">cap_</Item>
+            <Item Name="[begin_index]" ExcludeView="simple">start_</Item>
+			<Synthetic Name="[logical buffer]" Condition="size_ != 0">
+				<Expand>
+					<IndexListItems>
+						<Size>size_</Size>
+						<ValueNode>data_[(start_ + $i) % cap_]</ValueNode>
+					</IndexListItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="[logical buffer]" Condition="size_ == 0">
+				<DisplayString>empty</DisplayString>
+			</Synthetic>
+			<Synthetic Name="[physical buffer]" Condition="cap_ != 0">
+				<Expand>
+					<ArrayItems>
+						<Size>cap_</Size>
+						<ValuePointer>data_</ValuePointer>
+					</ArrayItems>
+				</Expand>
+			</Synthetic>
+			<Synthetic Name="[physical buffer]" Condition="cap_ == 0">
+				<DisplayString>empty</DisplayString>
+			</Synthetic>
+
+        </Expand>
+    </Type>
+</AutoVisualizer>

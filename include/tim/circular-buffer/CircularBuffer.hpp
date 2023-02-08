@@ -26,6 +26,7 @@
 #include <climits>
 #include <limits>
 #include <functional>
+#include <ratio>
 
 /**
  * @def TIM_CICULAR_BUFFER_NO_USE_INTRINSICS
@@ -726,10 +727,10 @@ template <class A, class T>
 constexpr std::false_type test_is_move_insertable(...) { return std::false_type{}; }
 
 template <class A, class T>
-struct is_move_insertible: decltype(test_is_move_insertable<A, T>()) {};
+struct is_move_insertable: decltype(test_is_move_insertable<A, T>()) {};
 
 template <class A, class T>
-inline constexpr bool is_move_insertible_v = is_move_insertible<A, T>::value;
+inline constexpr bool is_move_insertable_v = is_move_insertable<A, T>::value;
 
 template <class It>
 struct is_move_iterator : std::false_type {};
@@ -914,9 +915,155 @@ private:
 	Allocator* ref_;
 }; 
 
-
 template <bool IsConst, class T, class Allocator>
 struct CircularBufferIteratorBase
+{
+protected:
+	using size_type = typename std::allocator_traits<Allocator>::size_type;
+
+	static constexpr size_type tag_mask = ~(~size_type(0) >> 1);
+	using difference_type   = typename std::allocator_traits<Allocator>::difference_type;
+	using iterator_category = std::random_access_iterator_tag;
+	using reference         = std::conditional_t<IsConst, const T&, T&>;
+	using pointer           = std::conditional_t<IsConst, typename std::allocator_traits<Allocator>::const_pointer, typename std::allocator_traits<Allocator>::pointer>;
+	using value_type        = T;
+
+
+	constexpr CircularBufferIteratorBase(pointer data, size_type cap, size_type index, bool is_wrapped):
+		CircularBufferIteratorBase(data, cap, static_cast<difference_type>(is_wrapped ? index : index - cap))
+	{
+		_assert_invariants();
+	}
+
+	constexpr CircularBufferIteratorBase(pointer data, size_type cap, difference_type index):
+		index_(index),
+		data_(data),
+		cap_(cap)
+	{
+		_assert_invariants();
+	}
+
+
+	constexpr void _assert_invariants() const
+	{
+		if(cap_ == 0u)
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT(index_ == 0);
+		}
+		else
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT(data_);
+		}
+		if(index_ < 0)
+		{
+			TIM_CIRCULAR_BUFFER_ASSERT(cap_ != 0);
+			TIM_CIRCULAR_BUFFER_ASSERT(static_cast<size_type>(-index_) <=  cap_);
+			TIM_CIRCULAR_BUFFER_ASSERT(data_);
+		}
+		else if(index_ > 0)
+		{
+			volatile auto idx = index_;
+			TIM_CIRCULAR_BUFFER_ASSERT(static_cast<size_type>(idx) <= cap_);
+			TIM_CIRCULAR_BUFFER_ASSERT(data_);
+		}
+	}
+
+public:
+	constexpr CircularBufferIteratorBase() = default;
+	constexpr CircularBufferIteratorBase(const CircularBufferIteratorBase&) = default;
+	constexpr CircularBufferIteratorBase(CircularBufferIteratorBase&&) = default;
+
+	constexpr CircularBufferIteratorBase& operator=(const CircularBufferIteratorBase&) = default;
+	constexpr CircularBufferIteratorBase& operator=(CircularBufferIteratorBase&&) = default;
+
+
+protected:
+	constexpr pointer get_pointer() const {
+		_assert_invariants();
+		return data_ + get_index();
+	}
+
+	constexpr value_type* get_raw_pointer() const {
+		_assert_invariants();
+		return std::addressof(data_[get_index()]);
+	}
+	
+	constexpr void incr()
+	{
+		_assert_invariants();
+		++index_;
+		// Don't need to check for the tag; If it's equal to capacity it's untagged.
+		_assert_invariants();
+	}
+	
+	constexpr void decr()
+	{
+		_assert_invariants();
+		--index_;
+		_assert_invariants();
+	}
+
+	constexpr void add(size_type count)
+	{
+		_assert_invariants();
+		TIM_CIRCULAR_BUFFER_ASSERT(count <= cap_);
+		index_ += count;
+		_assert_invariants();
+	}
+
+	constexpr void subtract(size_type count) {
+		_assert_invariants();
+		index_ -= count;
+		_assert_invariants();
+	}
+
+	constexpr size_type get_index() const {
+		_assert_invariants();
+		return index_ < 0 ? static_cast<size_type>(static_cast<difference_type>(cap_) + index_) : static_cast<size_type>(index_);
+	}
+
+	constexpr bool get_has_wrapped() const {
+		return index_ >= 0;
+	}
+
+	constexpr void set_wrapped() {
+		_assert_invariants();
+		if(index_ >= 0)
+		{
+			return;
+		}
+		index_ = cap_ + index_;
+		_assert_invariants();
+	}
+
+	constexpr void set_not_wrapped() {
+		_assert_invariants();
+		if(index_ < 0)
+		{
+			return;
+		}
+		index_ = index_ - cap_;
+		_assert_invariants();
+	}
+
+
+	template <class, class>
+	friend struct CircularBuffer;
+
+	template <class, class>
+	friend struct CircularBufferIterator;
+
+	template <class, class>
+	friend struct ConstCircularBufferIterator;
+
+	difference_type index_ = 0;
+	pointer data_ = nullptr;
+	size_type cap_ = 0;
+};
+
+#if 0
+template <bool IsConst, class T, class Allocator>
+struct CircularBufferIteratorBase2
 {
 protected:
 	using size_type = typename std::allocator_traits<Allocator>::size_type;
@@ -1088,6 +1235,7 @@ protected:
 	size_type cap_ = 0;
 	size_type tagged_index_ = 0;
 };
+#endif
 
 
 } /* namespace detail */
@@ -1103,7 +1251,8 @@ struct ConstCircularBufferIterator;
  * A mutable LegacyRandomAccessIterator for CircularBuffer<T, Allocator>.
  */
 template <class T, class Allocator>
-struct CircularBufferIterator: public detail::CircularBufferIteratorBase<false, T, Allocator> {
+struct CircularBufferIterator: public detail::CircularBufferIteratorBase<false, T, Allocator>
+{
 private:
 	using base_type = detail::CircularBufferIteratorBase<false, T, Allocator>;
 	template <class, class>
@@ -1117,7 +1266,7 @@ private:
 
 	using base_type::data_;
 	using base_type::cap_;
-	using base_type::tagged_index_;
+	using base_type::index_;
 	using base_type::get_pointer;
 	using base_type::get_raw_pointer;
 	using base_type::incr;
@@ -1125,9 +1274,9 @@ private:
 	using base_type::add;
 	using base_type::subtract;
 	using base_type::get_has_wrapped;
-	using base_type::set_has_wrapped;
+	using base_type::set_wrapped;
+	using base_type::set_not_wrapped;
 	using base_type::get_index;
-	using base_type::set_index;
 	using base_type::_assert_invariants;
 
 public:
@@ -1146,7 +1295,7 @@ private:
 	}
 
 	constexpr CircularBufferIterator(const CircularBufferIterator<T, detail::AllocatorRef<Allocator>>& other) :
-		base_type(other.data_, other.cap_, other.tagged_index_)
+		base_type(other.data_, other.cap_, other.index_)
 	{
 		
 	}
@@ -1229,19 +1378,7 @@ public:
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == lhs.data_);
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.cap_ == lhs.cap_);
-		if(lhs.get_has_wrapped()) {
-			if(rhs.get_has_wrapped()) {
-				return lhs.tagged_index_ - rhs.tagged_index_;
-			} else {
-				return lhs.get_index() + (rhs.cap_ - rhs.tagged_index_);
-			}
-		} else {
-			if(rhs.get_has_wrapped()) {
-				return -static_cast<difference_type>(rhs.get_index() + (lhs.cap_ - lhs.tagged_index_));
-			} else {
-				return lhs.tagged_index_ - rhs.tagged_index_;
-			}
-		}
+		return lhs.index_ - rhs.index_;
 	}
 
 	constexpr reference operator[](difference_type ofs) const {
@@ -1253,7 +1390,7 @@ public:
 		rhs._assert_invariants();
 		if(lhs.data_ == rhs.data_) {
 			TIM_CIRCULAR_BUFFER_ASSERT(lhs.cap_ == rhs.cap_);
-			return lhs.tagged_index_ == rhs.tagged_index_;
+			return lhs.index_ == rhs.index_;
 		} else {
 			return false;
 		}
@@ -1267,28 +1404,28 @@ public:
 		lhs._assert_invariants();
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
-		return lhs.tagged_index_ < rhs.tagged_index_;
+		return lhs.index_ < rhs.index_;
 	}
 
 	friend constexpr bool operator<=(CircularBufferIterator lhs, CircularBufferIterator rhs) {
 		lhs._assert_invariants();
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
-		return lhs.tagged_index_ <= rhs.tagged_index_;
+		return lhs.index_ <= rhs.index_;
 	}
 	
 	friend constexpr bool operator>(CircularBufferIterator lhs, CircularBufferIterator rhs) {
 		lhs._assert_invariants();
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
-		return lhs.tagged_index_ > rhs.tagged_index_;
+		return lhs.index_ > rhs.index_;
 	}
 	
 	friend constexpr bool operator>=(CircularBufferIterator lhs, CircularBufferIterator rhs) {
 		lhs._assert_invariants();
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
-		return lhs.tagged_index_ >= rhs.tagged_index_;
+		return lhs.index_ >= rhs.index_;
 	}
 
 };
@@ -1313,7 +1450,7 @@ private:
 
 	using base_type::data_;
 	using base_type::cap_;
-	using base_type::tagged_index_;
+	using base_type::index_;
 	using base_type::get_pointer;
 	using base_type::get_raw_pointer;
 	using base_type::incr;
@@ -1321,9 +1458,9 @@ private:
 	using base_type::add;
 	using base_type::subtract;
 	using base_type::get_has_wrapped;
-	using base_type::set_has_wrapped;
+	using base_type::set_wrapped;
+	using base_type::set_not_wrapped;
 	using base_type::get_index;
-	using base_type::set_index;
 	using base_type::_assert_invariants;
 
 
@@ -1343,7 +1480,7 @@ private:
 	}
 
 	constexpr ConstCircularBufferIterator(const ConstCircularBufferIterator<T, detail::AllocatorRef<Allocator>>& other) :
-		base_type(other.data_, other.cap_, other.tagged_index_)
+		base_type(other.data_, other.cap_, other.index_)
 	{
 		
 	}
@@ -1357,7 +1494,7 @@ public:
 	constexpr ConstCircularBufferIterator& operator=(ConstCircularBufferIterator&&) = default;
 	
 	constexpr ConstCircularBufferIterator(const CircularBufferIterator<T, Allocator>& other) :
-		base_type(other.data_, other.cap_, other.tagged_index_)
+		base_type(other.data_, other.cap_, other.index_)
 	{
 
 	}
@@ -1432,19 +1569,7 @@ public:
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == lhs.data_);
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.cap_ == lhs.cap_);
-		if(lhs.get_has_wrapped()) {
-			if(rhs.get_has_wrapped()) {
-				return lhs.tagged_index_ - rhs.tagged_index_;
-			} else {
-				return lhs.get_index() + (rhs.cap_ - rhs.tagged_index_);
-			}
-		} else {
-			if(rhs.get_has_wrapped()) {
-				return -static_cast<difference_type>(rhs.get_index() + (lhs.cap_ - lhs.tagged_index_));
-			} else {
-				return lhs.tagged_index_ - rhs.tagged_index_;
-			}
-		}
+		return lhs.index_ - rhs.index_;
 	}
 
 	constexpr reference operator[](difference_type ofs) const {
@@ -1456,7 +1581,7 @@ public:
 		rhs._assert_invariants();
 		if(lhs.data_ == rhs.data_) {
 			TIM_CIRCULAR_BUFFER_ASSERT(lhs.cap_ == rhs.cap_);
-			return lhs.tagged_index_ == rhs.tagged_index_;
+			return lhs.index_ == rhs.index_;
 		} else {
 			return false;
 		}
@@ -1470,28 +1595,28 @@ public:
 		lhs._assert_invariants();
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
-		return lhs.tagged_index_ < rhs.tagged_index_;
+		return lhs.index_ < rhs.index_;
 	}
 
 	friend constexpr bool operator<=(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
 		lhs._assert_invariants();
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
-		return lhs.tagged_index_ <= rhs.tagged_index_;
+		return lhs.index_ <= rhs.index_;
 	}
 	
 	friend constexpr bool operator>(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
 		lhs._assert_invariants();
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
-		return lhs.tagged_index_ > rhs.tagged_index_;
+		return lhs.index_ > rhs.index_;
 	}
 	
 	friend constexpr bool operator>=(ConstCircularBufferIterator lhs, ConstCircularBufferIterator rhs) {
 		lhs._assert_invariants();
 		rhs._assert_invariants();
 		TIM_CIRCULAR_BUFFER_ASSERT(lhs.data_ == rhs.data_);
-		return lhs.tagged_index_ >= rhs.tagged_index_;
+		return lhs.index_ >= rhs.index_;
 	}
 };
 
@@ -1604,10 +1729,13 @@ public:
 
 private:
 	using temporary_buffer_allocator_type = std::conditional_t<
-		alloc_traits::is_always_equal::value&& std::is_empty_v<Allocator>,
+		alloc_traits::is_always_equal::value && std::is_empty_v<Allocator>,
 		Allocator,
 		detail::AllocatorRef<Allocator>>;
 	using temporary_buffer_type = CircularBuffer<T, temporary_buffer_allocator_type>;
+
+	using growth_factor_type = std::ratio<8, 5>;
+
 	struct TrivialRangeGuard {
 		TrivialRangeGuard() = default;
 		TrivialRangeGuard(const TrivialRangeGuard&) = delete;
@@ -2147,7 +2275,7 @@ public:
 
 
 	/** Destroys all elements in the container and releases all memory allocated. */
-	constexpr ~CircularBuffer()
+	constexpr ~CircularBuffer() noexcept(std::is_nothrow_destructible_v<Allocator>)
 	{
 		if(!data_)
 		{
@@ -5128,14 +5256,14 @@ private:
 		// Treat as a right shift.
 		count = capacity() - count;
 		auto new_begin = begin() + count;
-		new_begin.set_has_wrapped(false);
+		new_begin.set_not_wrapped();
 		auto new_end = new_begin + size();
 		try_move_construct_ranges(
 			get_ranges(),
 			as_split_ranges(new_begin, new_end)
 		);
 		clear_fast();
-		start_ = new_begin.tagged_index_;
+		start_ = new_begin.get_index();
 	}
 
 	template <class Src, class Dest>
@@ -5509,22 +5637,21 @@ private:
 	}
 
 	static constexpr size_type grow_size(size_type n) {
-		if(n == 0) {
-			return 1u;
-		}
-		if(n == 1) {
-			return 2u;
-		}
-		if((std::numeric_limits<size_type>::max() / 8) >= n) {
+		constexpr size_type numer = growth_factor_type::num;
+		constexpr size_type denom = growth_factor_type::den;
+		const size_type old_n = n;
+		if((std::numeric_limits<size_type>::max() / numer) >= n) {
+			[[likely]]
 			// Approximate the golden ratio if it won't overflow.
-			n *= 8;
-			n /= 5;
+			n *= numer;
+			n /= denom;
+			n += (old_n == n) ? 1u : 0u;
 			return n;
 		} else {
-			auto old_n = n;
-			n /= 5;
+			[[unlikely]]
+			n /= denom;
 			TIM_CIRCULAR_BUFFER_ASSERT(n > 0u);
-			n *= 8;
+			n *= numer;
 			if(n > old_n)
 			{
 				return n;
@@ -5534,28 +5661,12 @@ private:
 		}
 	}
 	
-	static constexpr std::optional<size_type> shrink_size(size_type n) {
-		if(n == 0) {
-			return std::nullopt;
-		} else if(n == 1) {
-			return 0u;
-		} else if((std::numeric_limits<size_type>::max() / 5ul) >= n) {
-			// Approximate the golden ratio if it won't overflow.
-			n *= 5ul;
-			n /= 8ul;
-			return n;
-		} else {
-			n /= 8ul;
-			n *= 5ul;
-			return n;
-		}
-	}
 
 	static constexpr SplitRanges<const_pointer> as_split_ranges(const_iterator first, const_iterator last) {
 		TIM_CIRCULAR_BUFFER_ASSERT(first <= last);
 		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>(first.get_pointer(), last.tagged_index_ - first.tagged_index_)
+				SplitRange<const_pointer>(first.get_pointer(), last.index_ - first.index_)
 			);
 		}
 		return SplitRanges<const_pointer>(
@@ -5568,7 +5679,7 @@ private:
 		TIM_CIRCULAR_BUFFER_ASSERT(first <= last);
 		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
 			return SplitRanges<pointer>(
-				SplitRange<pointer>(first.get_pointer(), last.tagged_index_ - first.tagged_index_)
+				SplitRange<pointer>(first.get_pointer(), last.index_ - first.index_)
 			);
 		}
 		return SplitRanges<pointer>(
@@ -5582,7 +5693,7 @@ private:
 		TIM_CIRCULAR_BUFFER_ASSERT(first <= last);
 		if(first.get_has_wrapped() || !last.get_has_wrapped()) {
 			return SplitRanges<std::move_iterator<pointer>>(
-				SplitRange<std::move_iterator<pointer>>(std::make_move_iterator(first.get_pointer()), last.tagged_index_ - first.tagged_index_)
+				SplitRange<std::move_iterator<pointer>>(std::make_move_iterator(first.get_pointer()), last.index_ - first.index_)
 			);
 		}
 		return SplitRanges<std::move_iterator<pointer>>(
@@ -5598,37 +5709,28 @@ private:
 		auto stop = end();
 		if(stop.get_has_wrapped()) {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>(stop.get_pointer(), start_.tagged_index_ - stop.get_index())
-			);
-			
-		} else if(start.tagged_index_ == 0u) {
-			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>(stop.get_pointer(), cap_ - stop.get_index())
+				SplitRange<const_pointer>(stop.get_pointer(), start.get_index() - stop.index_)
 			);
 		} else {
 			return SplitRanges<const_pointer>(
 				SplitRange<const_pointer>(stop.get_pointer(), cap_ - stop.get_index()),
-				SplitRange<const_pointer>(data_, start.tagged_index_)
+				SplitRange<const_pointer>(data_, start.get_index())
 			);
 		}
 	}
+
 
 	constexpr SplitRanges<pointer> get_spare_ranges() {
 		auto start = begin();
 		auto stop = end();
 		if(stop.get_has_wrapped()) {
 			return SplitRanges<pointer>(
-				SplitRange<pointer>(stop.get_pointer(), start.tagged_index_ - stop.get_index())
-			);
-			
-		} else if(start.tagged_index_ == 0u) {
-			return SplitRanges<pointer>(
-				SplitRange<pointer>(stop.get_pointer(), cap_ - stop.get_index())
+				SplitRange<pointer>(stop.get_pointer(), start.get_index() - stop.index_)
 			);
 		} else {
 			return SplitRanges<pointer>(
 				SplitRange<pointer>(stop.get_pointer(), cap_ - stop.get_index()),
-				SplitRange<pointer>(data_, start.tagged_index_)
+				SplitRange<pointer>(data_, start.get_index())
 			);
 		}
 	}
@@ -5636,41 +5738,33 @@ private:
 	constexpr SplitRanges<pointer> get_ranges() {
 		auto start = begin();
 		auto stop = end();
-		if(!stop.get_has_wrapped()) {
+		if(!stop.get_has_wrapped() || stop.get_index() == 0u) {
 			return SplitRanges<pointer>(
-				SplitRange<pointer>(start.get_pointer(), stop.tagged_index_ - start.tagged_index_)
-			);
-		} else if(stop.get_index() == 0u) {
-			return SplitRanges<pointer>(
-				SplitRange<pointer>(start.get_pointer(), cap_ - start.tagged_index_)
+				SplitRange<pointer>(start.get_pointer(), stop.index_ - start.index_)
 			);
 		} else {
 			return SplitRanges<pointer>(
-				SplitRange<pointer>(start.get_pointer(), cap_ - start.tagged_index_),
-				SplitRange<pointer>(data_, stop.get_index())
+				SplitRange<pointer>(start.get_pointer(), -start.index_),
+				SplitRange<pointer>(data_, stop.index_)
 			);
 		}
 	}
-
 
 	constexpr SplitRanges<const_pointer> get_ranges() const {
 		auto start = begin();
 		auto stop = end();
-		if(!stop.get_has_wrapped()) {
+		if(!stop.get_has_wrapped() || stop.get_index() == 0u) {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>(start.get_pointer(), stop.tagged_index_ - start.tagged_index_)
-			);
-		} else if(stop.get_index() == 0u) {
-			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>(start.get_pointer(), cap_ - start.tagged_index_)
+				SplitRange<const_pointer>(start.get_pointer(), stop.index_ - start.index_)
 			);
 		} else {
 			return SplitRanges<const_pointer>(
-				SplitRange<const_pointer>(start.get_pointer(), cap_ - start.tagged_index_),
-				SplitRange<const_pointer>(data_, stop.get_index())
+				SplitRange<const_pointer>(start.get_pointer(), -start.index_),
+				SplitRange<const_pointer>(data_, stop.index_)
 			);
 		}
 	}
+
 
 	template <class It>
 	static constexpr auto try_make_move_iterator(It it)
@@ -5707,7 +5801,7 @@ private:
 		iterator result;
 		result.data_ = std::pointer_traits<pointer>::pointer_to(const_cast<reference>(*it.data_));
 		result.cap_ = it.cap_;
-		result.tagged_index_ = it.tagged_index_;
+		result.index_ = it.index_;
 		return result;
 	}
 
