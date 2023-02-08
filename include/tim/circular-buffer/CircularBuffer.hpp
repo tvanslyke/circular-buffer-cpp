@@ -4670,15 +4670,15 @@ public:
 	 *                   ^ begin_index() == 3
 	 *
 	 * @param count The number of elements to shift the buffer right by.
-	 * @note If T is MoveInsertible and std::is_nothrow_move_constructible_v<T> is true,
+	 * @note If T is MoveInsertable and std::is_nothrow_move_constructible_v<T> is true,
 	 * and std::is_nothrow_move_assignable_v<T> is true, this function throws only those
 	 * exceptions thrown when move-constructing objects of type T using
 	 * std::allocator_traits<Allocator>::construct().
-	 * Otherwise if T is MoveInsertible and CopyInsertible but has a throwing move
+	 * Otherwise if T is MoveInsertable and CopyInsertable but has a throwing move
 	 * constructor or move assignment operator, elements are shifted using copy
 	 * construction and copy assignment.
 	 * In both of the above two cases, the strong exception guarantee is maintained.
-	 * Otherwise, if T is not CopyInsertible, the strong exception gaurantee is waived;
+	 * Otherwise, if T is not CopyInsertable, the strong exception gaurantee is waived;
 	 * elements are shifted using move construction and move assignment, but if an
 	 * exception is thrown, the buffer will be left in a valid but unspecified state.
 	 * @note This function does not allocate, all data movement is done in-place.
@@ -4705,15 +4705,15 @@ public:
 	 *             ^ begin_index() == 1
 	 *
 	 * @param count The number of elements to shift the buffer left by.
-	 * @note If T is MoveInsertible and std::is_nothrow_move_constructible_v<T> is true,
+	 * @note If T is MoveInsertable and std::is_nothrow_move_constructible_v<T> is true,
 	 * and std::is_nothrow_move_assignable_v<T> is true, this function throws only those
 	 * exceptions thrown when move-constructing objects of type T using
 	 * std::allocator_traits<Allocator>::construct().
-	 * Otherwise if T is MoveInsertible and CopyInsertible but has a throwing move
+	 * Otherwise if T is MoveInsertable and CopyInsertable but has a throwing move
 	 * constructor or move assignment operator, elements are shifted using copy
 	 * construction and copy assignment.
 	 * In both of the above two cases, the strong exception guarantee is maintained.
-	 * Otherwise, if T is not CopyInsertible, the strong exception gaurantee is waived;
+	 * Otherwise, if T is not CopyInsertable, the strong exception gaurantee is waived;
 	 * elements are shifted using move construction and move assignment, but if an
 	 * exception is thrown, the buffer will be left in a valid but unspecified state.
 	 * @note This function does not allocate, all data movement is done in-place.
